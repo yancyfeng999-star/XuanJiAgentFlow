@@ -1,0 +1,59 @@
+planner:
+  provider: deepseek
+  model: deepseek-chat
+  temperature: 0.7
+  max_tokens: 4096
+fallback:
+  provider: mimo
+  model: mimo-v2.5-pro
+  temperature: 0.7
+  max_tokens: 4096
+providers:
+  mimo:
+    base_url: https://token-plan-cn.xiaomimimo.com/v1
+    api_key_env: MIMO_API_KEY
+    models:
+    - mimo-v2.5
+    - mimo-v2.5-pro
+  mimo-cn:
+    base_url: https://api.xiaomimimo.com/v1
+    api_key_env: MIMO-CN_API_KEY
+    models:
+    - mimo-v2.5
+    - mimo-v2.5-pro
+  gemini:
+    base_url: https://api.rootflowai.com/v1
+    api_key_env: GEMINI_API_KEY
+    models:
+    - gemini-3.5-flash
+    - gemini-3.6-flash
+  grok:
+    base_url: https://api.rootflowai.com/v1
+    api_key_env: GROK_API_KEY
+    models:
+    - grok-4.5
+  gpt:
+    base_url: https://api.rootflowai.com/v1
+    api_key_env: GPT_API_KEY
+    models:
+    - gpt-5.5
+    - gpt-5.6-luna
+    - gpt-5.6-terra
+    - gpt-5.6-sol
+  claude:
+    base_url: https://api.rootflowai.com/v1
+    api_key_env: CLAUDE_API_KEY
+    models:
+    - claude-opus-4-8
+    - claude-opus-4-7
+    - claude-sonnet-5
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    models:
+    - deepseek-v4-flash
+    - deepseek-v4-pro
+hermes:
+  base_url: http://localhost:8001
+  timeout: 300
+  max_parallel: 5
