@@ -1,95 +1,71 @@
 # Hermes 集成决策记录
 
-> 状态：等待并行调研最终核实；以下为本机Hermes v0.19.0 CLI实测结论。
+> 状态：已核实
 
-## 已核实的官方入口
+## 核心结论
 
-### 一次性执行
+璇玑2.0应把Hermes节点集成为：**SSH运维面 + Hermes官方API Server执行面**。
 
-```bash
-hermes chat -q "任务内容" -Q --source tool --pass-session-id
-```
+## 已核实的官方接口
 
-能力：
+本机Hermes v0.19.0（2026-07-20）已核实的接口：
 
-- 非交互执行一个完整Hermes任务
-- 可指定model、provider、toolsets、skills、max-turns
-- 退出码可作为执行结果基础
-- stdout包含最终响应和会话信息
+### 推荐：API Server的异步Runs API
 
-限制：
+| 能力 | 官方接口 | 说明 |
+|------|----------|------|
+| 能力发现 | `GET /v1/capabilities` | 公布run/status/events/stop能力 |
+| 创建异步任务 | `POST /v1/runs` | HTTP 202，立即返回run_id |
+| 查询状态与结果 | `GET /v1/runs/{run_id}` | 含最终output文本 |
+| 实时事件 | `GET /v1/runs/{run_id}/events` | SSE流 |
+| 取消/停止 | `POST /v1/runs/{run_id}/stop` | 协作式停止 |
 
-- CLI调用本身没有标准HTTP异步任务ID
-- 中间日志是终端流，需要Node Agent捕获和结构化
-- 取消需要Node Agent管理子进程并发送终止信号
-- 产出文件必须由工作目录和manifest约定管理
-
-### MCP Server
+### 启用方式
 
 ```bash
-hermes mcp serve
+hermes config set api_server.enabled true
+hermes config set api_server.host 127.0.0.1
+hermes config set api_server.port 8642
 ```
 
-用途是把Hermes作为MCP服务器提供工具，不等于异步任务队列。
+认证：Bearer token，通过 `hermes config set api_server.api_key` 或 `.env` 中 `HERMES_API_KEY`。
 
-### ACP
+### 已核实的限制
 
-```bash
-hermes acp
-```
+- Run状态TTL：3600秒（进程内存）
+- Run状态为进程内存，重启后丢失
+- 停止是协作式，不是强制kill
+- 没有通用artifact下载接口
+- 需要外部收集文件产出
 
-用于IDE集成，不是远程节点任务API。
-
-### Messaging Gateway
-
-```bash
-hermes gateway run
-hermes gateway install
-```
-
-主要服务Telegram/Discord/Slack等消息平台。不能在未核实前假设它天然提供璇玑所需的任务创建、状态、取消、日志和文件API。
-
-## 2.0决策
-
-第一版实现独立的轻量 `xuanji-node-agent`：
+## 2.0集成架构
 
 ```text
-POST   /v1/tasks
-GET    /v1/tasks/{id}
-POST   /v1/tasks/{id}/cancel
-GET    /v1/tasks/{id}/logs
-GET    /v1/tasks/{id}/artifacts
-GET    /v1/health
-GET    /v1/capabilities
+璇玑 Coordinator
+    │
+    ├── SSH：安装、升级、配置、启停、诊断
+    │
+    └── HTTPS API（日常执行）：
+        POST /v1/runs          → 创建任务
+        GET  /v1/runs/{id}     → 轮询状态
+        GET  /v1/runs/{id}/events → SSE实时事件
+        POST /v1/runs/{id}/stop   → 取消任务
 ```
 
-Node Agent内部：
+## Node Agent职责
 
-1. 为任务创建独立工作目录
-2. 启动 `hermes chat -q ... -Q --source tool --pass-session-id`
-3. 捕获stdout/stderr为JSONL日志
-4. 保存PID、状态、退出码、Hermes session ID
-5. 扫描约定的artifacts目录并生成manifest
-6. 取消时终止真实Hermes子进程
-7. 重启后从磁盘manifest恢复任务状态
+Node Agent封装每台机器的Hermes交互：
 
-## 远程部署
-
-SSH用于：
-
-- 检测 `hermes --version`
-- 未安装时执行官方安装流程
-- 执行 `hermes doctor`
-- 上传Node Agent版本包
-- 安装systemd/launchd服务
-- 更新、重启和读取诊断日志
-
-日常执行使用Node Agent的受认证HTTPS API。
+1. 接收璇玑调度请求
+2. 调用本地Hermes API Server的 `/v1/runs`
+3. 通过SSE收集实时事件
+4. 等待完成后收集文件产出（Hermes不提供artifact下载）
+5. 生成SHA-256 manifest
+6. 上报状态和产出给Coordinator
 
 ## 安全
 
 - SSH私钥只保存路径
-- Node API必须使用token或mTLS
-- 默认不暴露公网明文HTTP
-- 每个任务工作目录必须限制在Node Agent根目录内
-- Prompt和日志不能包含Hermes配置文件或API密钥内容
+- Node API使用token认证
+- 默认不暴露公网
+- 每个任务工作目录限制在Node Agent根目录内
