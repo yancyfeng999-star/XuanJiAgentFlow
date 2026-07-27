@@ -1,9 +1,0 @@
-app.py
-executor.py
-pyproject.toml
-tests/test_node_api.py
-xuanji_node_agent.egg-info/PKG-INFO
-xuanji_node_agent.egg-info/SOURCES.txt
-xuanji_node_agent.egg-info/dependency_links.txt
-xuanji_node_agent.egg-info/requires.txt
-xuanji_node_agent.egg-info/top_level.txt
