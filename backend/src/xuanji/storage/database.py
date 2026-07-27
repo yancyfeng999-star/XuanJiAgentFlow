@@ -10,7 +10,7 @@ class Database:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path, isolation_level=None)
+        self.connection = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.execute("PRAGMA journal_mode=WAL")
@@ -28,6 +28,10 @@ class Database:
 
     def close(self) -> None:
         self.connection.close()
+
+    def migrate(self) -> None:
+        from .migrations import migrate
+        migrate(self)
 
     def __enter__(self) -> Database:
         return self
