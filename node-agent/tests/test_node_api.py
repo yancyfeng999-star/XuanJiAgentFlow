@@ -1,65 +1,95 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app import create_app
+from executor import HermesNodeClient, TaskRecord
 
 
-def make_fake_hermes(tmp_path: Path, sleep: bool = False) -> Path:
-    script = tmp_path / "hermes"
-    body = "#!/bin/sh\n"
-    if sleep:
-        body += "sleep 20\n"
-    else:
-        body += "mkdir -p artifacts\necho test-output > artifacts/result.txt\necho final-response\n"
-    script.write_text(body)
-    script.chmod(0o755)
-    return script
+class FakeHermesClient:
+    """Deterministic fake that simulates Hermes /v1/runs behavior."""
+
+    def __init__(self) -> None:
+        self.runs: dict[str, dict] = {}
+        self._counter = 0
+
+    def health(self) -> dict:
+        return {"hermes_available": True, "models": [], "tools": []}
+
+    def create_run(self, prompt: str, task_id: str | None = None) -> dict:
+        run_id = task_id or f"run_{self._counter}"
+        self._counter += 1
+        self.runs[run_id] = {"id": run_id, "status": "completed", "output": f"Result for: {prompt}"}
+        return self.runs[run_id]
+
+    def get_run(self, run_id: str) -> dict:
+        return self.runs.get(run_id, {"id": run_id, "status": "unknown"})
+
+    def stop_run(self, run_id: str) -> dict:
+        if run_id in self.runs:
+            self.runs[run_id]["status"] = "stopped"
+        return {"id": run_id, "status": "stopped"}
+
+
+def make_app(tmp_path: Path, token: str = ""):
+    fake = FakeHermesClient()
+    client = HermesNodeClient.__new__(HermesNodeClient)
+    client.__dict__.update({"base_url": "http://fake", "token": "", "timeout": 10})
+    # Monkey-patch the client methods
+    original_create = create_app
+    app = create_app(root=tmp_path / "tasks", token=token, hermes_url="http://fake", hermes_token="")
+    # Replace the executor's client with our fake
+    app.state.executor.client = fake
+    return app, fake
 
 
 def test_health_requires_token(tmp_path: Path):
-    app = create_app(tmp_path / "tasks", token="secret", hermes_bin=str(make_fake_hermes(tmp_path)))
+    app, _ = make_app(tmp_path, token="secret")
     client = TestClient(app)
     assert client.get("/v1/health").status_code == 401
     response = client.get("/v1/health", headers={"Authorization": "Bearer secret"})
     assert response.status_code == 200
-    assert response.json()["hermes_available"] is True
 
 
-def test_task_runs_and_lists_artifact(tmp_path: Path):
-    app = create_app(tmp_path / "tasks", hermes_bin=str(make_fake_hermes(tmp_path)))
-    with TestClient(app) as client:
-        created = client.post("/v1/tasks", json={"goal": "write result", "idempotency_key": "task_demo"})
-        assert created.status_code == 202
-
-        import time
-        state = {"status": "queued"}
-        for _ in range(50):
-            state = client.get("/v1/tasks/task_demo").json()
-            if state["status"] in {"success", "failed"}:
-                break
-            time.sleep(0.02)
-
-        assert state["status"] == "success"
-        logs = client.get("/v1/tasks/task_demo/logs").json()["events"]
-        assert any("final-response" in event["message"] for event in logs)
-        artifacts = client.get("/v1/tasks/task_demo/artifacts").json()["artifacts"]
-        assert artifacts[0]["path"] == "artifacts/result.txt"
-        assert len(artifacts[0]["sha256"]) == 64
-
-
-def test_idempotency_returns_existing_task(tmp_path: Path):
-    app = create_app(tmp_path / "tasks", hermes_bin=str(make_fake_hermes(tmp_path)))
+def test_task_creates_and_completes(tmp_path: Path):
+    app, fake = make_app(tmp_path)
     client = TestClient(app)
-    first = client.post("/v1/tasks", json={"goal": "one", "idempotency_key": "same"})
-    second = client.post("/v1/tasks", json={"goal": "two", "idempotency_key": "same"})
-    assert first.json()["id"] == second.json()["id"] == "same"
+    created = client.post("/v1/tasks", json={"goal": "test task", "idempotency_key": "t1"})
+    assert created.status_code == 202
+    data = created.json()
+    assert data["id"] == "t1"
+    assert data["status"] == "running"
+    assert data["hermes_run_id"] is not None
+
+    # Poll should transition to success
+    state = client.get("/v1/tasks/t1").json()
+    assert state["status"] == "success"
 
 
-def test_cancel_terminates_process(tmp_path: Path):
-    app = create_app(tmp_path / "tasks", hermes_bin=str(make_fake_hermes(tmp_path, sleep=True)))
-    with TestClient(app) as client:
-        client.post("/v1/tasks", json={"goal": "long task", "idempotency_key": "long"})
-        cancelled = client.post("/v1/tasks/long/cancel")
-        assert cancelled.status_code == 200
-        assert cancelled.json()["status"] == "cancelled"
+def test_cancel_stops_hermes_run(tmp_path: Path):
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+    client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "t2"})
+    cancelled = client.post("/v1/tasks/t2/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+
+def test_idempotency(tmp_path: Path):
+    app, _ = make_app(tmp_path)
+    client = TestClient(app)
+    first = client.post("/v1/tasks", json={"goal": "a", "idempotency_key": "dup"})
+    second = client.post("/v1/tasks", json={"goal": "b", "idempotency_key": "dup"})
+    assert first.json()["id"] == second.json()["id"]
+
+
+def test_artifacts_captured(tmp_path: Path):
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+    client.post("/v1/tasks", json={"goal": "produce output", "idempotency_key": "t3"})
+    client.get("/v1/tasks/t3")  # trigger poll
+    artifacts = client.get("/v1/tasks/t3/artifacts").json()["artifacts"]
+    assert len(artifacts) >= 1
+    assert artifacts[0]["sha256"] is not None

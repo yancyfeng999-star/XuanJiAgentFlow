@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import os
+import json
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from executor import NodeExecutor
+from executor import HermesNodeClient, NodeExecutor
 
 
 class CreateTaskRequest(BaseModel):
@@ -17,13 +18,20 @@ class CreateTaskRequest(BaseModel):
 def create_app(
     root: Path | None = None,
     token: str | None = None,
-    hermes_bin: str | None = None,
+    hermes_url: str | None = None,
+    hermes_token: str | None = None,
 ) -> FastAPI:
-    root = root or Path(os.getenv("XUANJI_NODE_ROOT", "~/.xuanji-node/tasks")).expanduser()
+    from pathlib import Path as _P
+    import os
+
+    root = root or _P(os.getenv("XUANJI_NODE_ROOT", "~/.xuanji-node/tasks")).expanduser()
     token = token if token is not None else os.getenv("XUANJI_NODE_TOKEN", "")
-    hermes_bin = hermes_bin or os.getenv("HERMES_BIN", "hermes")
-    executor = NodeExecutor(root, hermes_bin)
-    app = FastAPI(title="Xuanji Hermes Node", version="0.1.0")
+    hermes_url = hermes_url or os.getenv("HERMES_API_URL", "http://127.0.0.1:8642")
+    hermes_token = hermes_token or os.getenv("HERMES_API_KEY", "")
+
+    client = HermesNodeClient(hermes_url, hermes_token)
+    executor = NodeExecutor(root, client)
+    app = FastAPI(title="Xuanji Hermes Node", version="0.2.0")
     app.state.executor = executor
 
     async def authorize(authorization: str | None = Header(default=None)) -> None:
@@ -43,20 +51,21 @@ def create_app(
     async def create_task(request: CreateTaskRequest, _: None = Depends(authorize)) -> dict:
         task_id = request.idempotency_key or None
         record = executor.create(request.goal, task_id)
-        record = await executor.start(record.id)
+        record = executor.start(record.id)
         return record.__dict__
 
     @app.get("/v1/tasks/{task_id}")
     async def get_task(task_id: str, _: None = Depends(authorize)) -> dict:
         try:
-            return executor.get(task_id).__dict__
+            record = executor.poll(task_id)
+            return record.__dict__
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail={"code": "task_not_found", "message": task_id})
 
     @app.post("/v1/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str, _: None = Depends(authorize)) -> dict:
         try:
-            return (await executor.cancel(task_id)).__dict__
+            return executor.cancel(task_id).__dict__
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail={"code": "task_not_found", "message": task_id})
 

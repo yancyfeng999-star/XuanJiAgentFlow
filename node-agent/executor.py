@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
-import os
-import shutil
-import signal
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncIterator
+from typing import Any
+
+import httpx
 
 
 def now_iso() -> str:
@@ -25,20 +23,52 @@ class TaskRecord:
     workdir: str
     created_at: str
     updated_at: str
-    pid: int | None = None
-    exit_code: int | None = None
+    hermes_run_id: str | None = None
     error: str | None = None
 
 
-class NodeExecutor:
-    """Runs one Hermes CLI process per task and persists recoverable state."""
+class HermesNodeClient:
+    """Client for Hermes API Server's /v1/runs interface."""
 
-    def __init__(self, root: Path, hermes_bin: str = "hermes") -> None:
+    def __init__(self, base_url: str, token: str, timeout: float = 300) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.token = token
+        self.timeout = timeout
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+
+    def health(self) -> dict[str, Any]:
+        resp = httpx.get(f"{self.base_url}/v1/capabilities", headers=self._headers(), timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    def create_run(self, prompt: str, task_id: str | None = None) -> dict[str, Any]:
+        payload = {"prompt": prompt}
+        if task_id:
+            payload["idempotency_key"] = task_id
+        resp = httpx.post(f"{self.base_url}/v1/runs", json=payload, headers=self._headers(), timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        resp = httpx.get(f"{self.base_url}/v1/runs/{run_id}", headers=self._headers(), timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    def stop_run(self, run_id: str) -> dict[str, Any]:
+        resp = httpx.post(f"{self.base_url}/v1/runs/{run_id}/stop", headers=self._headers(), timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+
+class NodeExecutor:
+    """Runs tasks via Hermes API Server and persists recoverable state."""
+
+    def __init__(self, root: Path, client: HermesNodeClient) -> None:
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.hermes_bin = hermes_bin
-        self._processes: dict[str, asyncio.subprocess.Process] = {}
-        self._workers: dict[str, asyncio.Task[None]] = {}
+        self.client = client
 
     def _task_dir(self, task_id: str) -> Path:
         path = (self.root / task_id).resolve()
@@ -72,92 +102,56 @@ class NodeExecutor:
         self._save(record)
         return record
 
-    async def start(self, task_id: str) -> TaskRecord:
+    def start(self, task_id: str) -> TaskRecord:
         record = self._load(task_id)
         if record.status in {"running", "success"}:
             return record
-        worker = asyncio.create_task(self._run(task_id))
-        self._workers[task_id] = worker
-        await asyncio.sleep(0)
-        return self._load(task_id)
-
-    async def _run(self, task_id: str) -> None:
-        record = self._load(task_id)
-        task_dir = self._task_dir(task_id)
-        log_path = task_dir / "logs.jsonl"
-        command = [
-            self.hermes_bin,
-            "chat",
-            "-q",
-            record.goal,
-            "-Q",
-            "--source",
-            "tool",
-            "--pass-session-id",
-        ]
         try:
-            process = await asyncio.create_subprocess_exec(
-                *command,
-                cwd=task_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            self._processes[task_id] = process
+            result = self.client.create_run(record.goal, task_id)
+            hermes_run_id = result.get("id") or result.get("run_id")
+            record.hermes_run_id = hermes_run_id
             record.status = "running"
-            record.pid = process.pid
             record.updated_at = now_iso()
             self._save(record)
-
-            async def drain(stream: asyncio.StreamReader, level: str) -> None:
-                with log_path.open("a", encoding="utf-8") as log:
-                    while line := await stream.readline():
-                        event = {"time": now_iso(), "level": level, "message": line.decode(errors="replace").rstrip()}
-                        log.write(json.dumps(event, ensure_ascii=False) + "\n")
-                        log.flush()
-
-            assert process.stdout is not None
-            assert process.stderr is not None
-            await asyncio.gather(drain(process.stdout, "stdout"), drain(process.stderr, "stderr"))
-            code = await process.wait()
-            record = self._load(task_id)
-            record.exit_code = code
-            record.pid = None
-            record.status = "success" if code == 0 else "failed"
-            record.error = None if code == 0 else f"Hermes exited with code {code}"
-            record.updated_at = now_iso()
-            self._save(record)
-            self._write_artifact_manifest(task_id)
-        except FileNotFoundError:
+        except Exception as exc:
             record.status = "failed"
-            record.error = f"Hermes executable not found: {self.hermes_bin}"
+            record.error = str(exc)
             record.updated_at = now_iso()
             self._save(record)
-        except asyncio.CancelledError:
-            raise
-        finally:
-            self._processes.pop(task_id, None)
-            self._workers.pop(task_id, None)
+        return record
 
-    async def cancel(self, task_id: str) -> TaskRecord:
+    def poll(self, task_id: str) -> TaskRecord:
         record = self._load(task_id)
-        process = self._processes.get(task_id)
-        if process and process.returncode is None:
+        if record.status not in {"running"} or not record.hermes_run_id:
+            return record
+        try:
+            hermes_state = self.client.get_run(record.hermes_run_id)
+            hermes_status = hermes_state.get("status", "unknown")
+            if hermes_status in {"completed", "success"}:
+                record.status = "success"
+                record.updated_at = now_iso()
+                self._save(record)
+                self._capture_output(task_id, hermes_state)
+            elif hermes_status in {"failed", "error"}:
+                record.status = "failed"
+                record.error = hermes_state.get("error", "Hermes run failed")
+                record.updated_at = now_iso()
+                self._save(record)
+        except Exception as exc:
+            record.status = "failed"
+            record.error = f"Poll error: {exc}"
+            record.updated_at = now_iso()
+            self._save(record)
+        return record
+
+    def cancel(self, task_id: str) -> TaskRecord:
+        record = self._load(task_id)
+        if record.hermes_run_id:
             try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
+                self.client.stop_run(record.hermes_run_id)
+            except Exception:
                 pass
-            try:
-                await asyncio.wait_for(process.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                await process.wait()
-        record = self._load(task_id)
         record.status = "cancelled"
-        record.pid = None
         record.updated_at = now_iso()
         self._save(record)
         return record
@@ -166,15 +160,11 @@ class NodeExecutor:
         return self._load(task_id)
 
     def capabilities(self) -> dict:
-        hermes_path = shutil.which(self.hermes_bin)
-        return {
-            "hermes_available": hermes_path is not None,
-            "hermes_path": hermes_path,
-            "max_concurrency": 1,
-            "running_tasks": len(self._processes),
-            "tools": [],
-            "models": [],
-        }
+        try:
+            caps = self.client.health()
+            return {"hermes_available": True, "hermes_capabilities": caps}
+        except Exception as exc:
+            return {"hermes_available": False, "error": str(exc)}
 
     def logs(self, task_id: str, offset: int = 0) -> list[dict]:
         path = self._task_dir(task_id) / "logs.jsonl"
@@ -192,6 +182,15 @@ class NodeExecutor:
         if not path.exists():
             return []
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def _capture_output(self, task_id: str, hermes_state: dict) -> None:
+        task_dir = self._task_dir(task_id)
+        artifacts_dir = task_dir / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        output = hermes_state.get("output", "")
+        if output:
+            (artifacts_dir / "hermes-output.md").write_text(output, encoding="utf-8")
+        self._write_artifact_manifest(task_id)
 
     def _write_artifact_manifest(self, task_id: str) -> None:
         task_dir = self._task_dir(task_id)
