@@ -2,36 +2,84 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+BACKEND_DIR="$ROOT/backend"
+NODE_AGENT_DIR="$ROOT/node-agent"
+APP_DIR="$ROOT/app"
+VENV_DIR="$ROOT/.venv"
+SKIP_E2E=false
+SKIP_TAURI_BUILD=false
 
-PY="$ROOT/backend/.venv/bin/python"
+for arg in "$@"; do
+  case "$arg" in
+    --skip-e2e) SKIP_E2E=true ;;
+    --skip-tauri-build) SKIP_TAURI_BUILD=true ;;
+    *)
+      echo "Unknown option: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  if [[ -n "${PYTHON:-}" ]]; then
+    PYTHON_BIN="$PYTHON"
+  else
+    PYTHON_BIN="$(command -v python3)"
+  fi
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
+
+PY="$VENV_DIR/bin/python"
+"$PY" -m pip install -q -e "$BACKEND_DIR[test]" -e "$NODE_AGENT_DIR[test]"
+
+if [[ ! -d "$APP_DIR/node_modules" ]]; then
+  (cd "$APP_DIR" && npm install)
+fi
 
 echo "=== 1. Backend tests ==="
-"$PY" -m pytest -q backend/tests
+"$PY" -m pytest -q "$BACKEND_DIR/tests"
 
-echo ""
+echo
 echo "=== 2. Node Agent tests ==="
-"$PY" -m pytest -q node-agent/tests
+"$PY" -m pytest -q "$NODE_AGENT_DIR/tests"
 
-echo ""
+echo
 echo "=== 3. Frontend tests ==="
-cd app && npm test && cd ..
+(cd "$APP_DIR" && npm test)
 
-echo ""
-echo "=== 4. Frontend build ==="
-cd app && npm run build && cd ..
+echo
+echo "=== 4. Frontend lint ==="
+(cd "$APP_DIR" && npm run lint)
 
-echo ""
-echo "=== 5. Frontend lint ==="
-cd app && npm run lint && cd ..
+echo
+echo "=== 5. Frontend build ==="
+(cd "$APP_DIR" && npm run build)
 
-echo ""
-echo "=== 6. Backend compilation check ==="
-"$PY" -m compileall -q backend/src backend/tests
+if [[ "$SKIP_E2E" == false ]]; then
+  echo
+  echo "=== 6. Frontend E2E tests ==="
+  (cd "$APP_DIR" && npm run test:e2e)
+fi
 
-echo ""
-echo "=== 7. Git status ==="
-git status --short
+echo
+echo "=== 7. Python compilation check ==="
+"$PY" -m compileall -q \
+  "$BACKEND_DIR/src" "$BACKEND_DIR/tests" \
+  "$NODE_AGENT_DIR/app.py" "$NODE_AGENT_DIR/executor.py" "$NODE_AGENT_DIR/tests"
 
-echo ""
-echo "✅ All checks passed"
+echo
+echo "=== 8. Cargo tests ==="
+cargo test --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
+
+echo
+echo "=== 9. Cargo check ==="
+cargo check --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
+
+if [[ "$SKIP_TAURI_BUILD" == false ]]; then
+  echo
+  echo "=== 10. Tauri build ==="
+  (cd "$APP_DIR" && npm run build:tauri)
+fi
+
+echo
+echo "All checks passed"
