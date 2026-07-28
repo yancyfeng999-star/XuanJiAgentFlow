@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -88,11 +90,74 @@ def test_task_creation_is_idempotent_without_restarting_hermes(tmp_path: Path) -
 
     first = client.post("/v1/tasks", json={"goal": "first goal", "idempotency_key": "dup"})
     client.get("/v1/tasks/dup")
-    second = client.post("/v1/tasks", json={"goal": "different goal", "idempotency_key": "dup"})
+    second = client.post("/v1/tasks", json={"goal": "first goal", "idempotency_key": "dup"})
 
     assert first.json()["id"] == second.json()["id"] == "dup"
     assert second.json()["goal"] == "first goal"
     assert second.json()["status"] == "success"
+    assert fake.create_calls == 1
+
+
+def test_task_creation_rejects_unsafe_idempotency_keys(tmp_path: Path) -> None:
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+
+    for key in ("../escape", "nested/task", "..", "."):
+        response = client.post("/v1/tasks", json={"goal": "unsafe", "idempotency_key": key})
+        assert response.status_code == 422
+
+    assert fake.create_calls == 0
+    assert not (tmp_path / "tasks" / "escape").exists()
+
+
+def test_task_creation_conflicts_when_idempotency_goal_changes(tmp_path: Path) -> None:
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+
+    first = client.post("/v1/tasks", json={"goal": "first goal", "idempotency_key": "dup-goal"})
+    second = client.post("/v1/tasks", json={"goal": "different goal", "idempotency_key": "dup-goal"})
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "idempotency_conflict"
+    assert fake.create_calls == 1
+
+
+def test_concurrent_task_creation_starts_hermes_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, fake = make_app(tmp_path)
+    barrier = threading.Barrier(2)
+    task_dir = tmp_path / "tasks" / "concurrent"
+    original_exists = Path.exists
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def synchronized_exists(path: Path) -> bool:
+        nonlocal calls
+        if path == task_dir:
+            with calls_lock:
+                calls += 1
+                current_call = calls
+            if current_call <= 2:
+                barrier.wait(timeout=2)
+                return False
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", synchronized_exists)
+
+    def create() -> int:
+        with TestClient(app) as client:
+            return client.post(
+                "/v1/tasks",
+                json={"goal": "same goal", "idempotency_key": "concurrent"},
+            ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(lambda _: create(), range(2)))
+
+    assert statuses == [202, 202]
     assert fake.create_calls == 1
 
 
@@ -135,6 +200,48 @@ def test_cancel_communication_failure_is_persisted_as_cancel_failed(tmp_path: Pa
     assert client.get("/v1/tasks/cancel-error").json()["status"] == "cancel_failed"
 
 
+@pytest.mark.parametrize(
+    ("hermes_status", "expected_status"),
+    [("stopped", "cancelled"), ("cancelled", "cancelled"), ("failed", "failed")],
+)
+def test_cancelling_task_poll_reconciles_terminal_hermes_status(
+    tmp_path: Path,
+    hermes_status: str,
+    expected_status: str,
+) -> None:
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+    client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-poll"})
+    fake.stop_status = "running"
+    assert client.post("/v1/tasks/cancel-poll/cancel").json()["status"] == "cancelling"
+    fake.runs["cancel-poll"]["status"] = hermes_status
+    if hermes_status == "failed":
+        fake.runs["cancel-poll"]["error"] = "Hermes cancellation failed"
+
+    reconciled = client.get("/v1/tasks/cancel-poll")
+
+    assert reconciled.json()["status"] == expected_status
+    if expected_status == "cancelled":
+        assert reconciled.json()["error"] is None
+    else:
+        assert reconciled.json()["error"] == "Hermes cancellation failed"
+
+
+def test_cancelling_task_poll_failure_becomes_cancel_failed(tmp_path: Path) -> None:
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+    client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-poll-error"})
+    fake.stop_status = "running"
+    assert client.post("/v1/tasks/cancel-poll-error/cancel").json()["status"] == "cancelling"
+    fake.runs.pop("cancel-poll-error")
+    fake.get_run = lambda _: (_ for _ in ()).throw(OSError("Hermes unavailable"))
+
+    reconciled = client.get("/v1/tasks/cancel-poll-error")
+
+    assert reconciled.json()["status"] == "cancel_failed"
+    assert "Hermes unavailable" in reconciled.json()["error"]
+
+
 def test_artifact_list_matches_node_client_protocol_and_download_streams(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path, token="secret")
     client = TestClient(app)
@@ -169,6 +276,37 @@ def test_artifact_list_matches_node_client_protocol_and_download_streams(tmp_pat
 
     assert body == b"Result for: produce output"
     assert client.get(f"/v1/tasks/artifact-task/artifacts/{artifact['path']}").status_code == 401
+
+
+def test_artifact_download_streams_opened_file_after_path_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, _ = make_app(tmp_path)
+    client = TestClient(app)
+    create_completed_task(client, "replaced-artifact")
+    expected = b"Result for: produce output"
+    path = tmp_path / "tasks" / "replaced-artifact" / "artifacts" / "hermes-output.md"
+    replacement = path.with_name("replacement.md")
+    replacement.write_bytes(b"X" * len(expected))
+    original_artifact = app.state.executor.artifact
+    captured: dict = {}
+
+    def open_then_replace(*args):
+        opened = original_artifact(*args)
+        captured["opened"] = opened[0]
+        replacement.replace(path)
+        return opened
+
+    monkeypatch.setattr(app.state.executor, "artifact", open_then_replace)
+
+    response = client.get("/v1/tasks/replaced-artifact/artifacts/hermes-output.md")
+
+    assert response.status_code == 200
+    assert response.content == expected
+    assert response.headers["x-artifact-size"] == str(len(expected))
+    assert response.headers["x-artifact-sha256"] == hashlib.sha256(expected).hexdigest()
+    assert captured["opened"].closed
 
 
 def test_artifact_download_rejects_parent_traversal_and_absolute_paths(tmp_path: Path) -> None:

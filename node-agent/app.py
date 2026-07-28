@@ -13,7 +13,12 @@ from executor import HermesNodeClient, NodeExecutor
 
 class CreateTaskRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=200_000)
-    idempotency_key: str | None = None
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$",
+    )
 
 
 def create_app(
@@ -51,9 +56,13 @@ def create_app(
     @app.post("/v1/tasks", status_code=202)
     async def create_task(request: CreateTaskRequest, _: None = Depends(authorize)) -> dict:
         task_id = request.idempotency_key or None
-        record = executor.create(request.goal, task_id)
-        record = executor.start(record.id)
-        return record.__dict__
+        try:
+            return executor.create_and_start(request.goal, task_id).__dict__
+        except FileExistsError:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "idempotency_conflict", "message": "idempotency key has a different goal"},
+            ) from None
 
     @app.get("/v1/tasks/{task_id}")
     async def get_task(task_id: str, _: None = Depends(authorize)) -> dict:
@@ -92,7 +101,7 @@ def create_app(
         _: None = Depends(authorize),
     ) -> StreamingResponse:
         try:
-            path, size, digest = executor.artifact(task_id, artifact_path)
+            artifact, size, digest = executor.artifact(task_id, artifact_path)
         except ValueError:
             raise HTTPException(
                 status_code=400,
@@ -104,7 +113,7 @@ def create_app(
                 detail={"code": "artifact_not_found", "message": artifact_path},
             ) from None
         return StreamingResponse(
-            executor.stream_artifact(path),
+            executor.stream_artifact(artifact),
             media_type="application/octet-stream",
             headers={
                 "Content-Length": str(size),

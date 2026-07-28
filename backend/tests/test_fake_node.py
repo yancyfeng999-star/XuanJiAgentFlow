@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from tests.fakes.fake_node import FakeNode, FakeNodeMode
-from xuanji.nodes import NodeClient, NodeConnectionError
+from xuanji.nodes import NodeClient, NodeConnectionError, NodeProtocolError
 
 
 @pytest.mark.asyncio
@@ -64,20 +64,47 @@ async def test_fake_node_artifact_transport_and_bad_hash(mode: FakeNodeMode) -> 
             task = await client.create_task("artifact goal", "dispatch-artifact")
             assert (await client.get_task(task.id)).status == "success"
             artifact = (await client.artifacts(task.id)).artifacts[0]
-            response = await transport_client.get(
-                f"/v1/tasks/{task.id}/artifacts/{artifact.path}",
-                headers={"Authorization": f"Bearer {fake.token}"},
-            )
+            downloaded = await client.download_artifact(task.id, artifact.path)
 
-        actual_hash = hashlib.sha256(response.content).hexdigest()
-        assert response.status_code == 200
-        assert artifact.size == len(response.content)
-        assert response.headers["x-artifact-size"] == str(artifact.size)
-        assert response.headers["x-artifact-sha256"] == actual_hash
+        actual_hash = hashlib.sha256(downloaded.body).hexdigest()
+        assert artifact.size == len(downloaded.body)
+        assert downloaded.size == artifact.size
+        assert downloaded.sha256 == actual_hash
         if mode is FakeNodeMode.BAD_HASH:
             assert artifact.sha256 != actual_hash
         else:
             assert artifact.sha256 == actual_hash
+
+
+@pytest.mark.asyncio
+async def test_node_client_streams_artifact_with_verified_headers() -> None:
+    with FakeNode() as fake:
+        async with fake.client() as transport_client:
+            client = NodeClient("http://fake-node", fake.token, client=transport_client)
+            task = await client.create_task("artifact goal", "stream-artifact")
+            assert (await client.get_task(task.id)).status == "success"
+            chunks = []
+            async with client.stream_artifact(task.id, "result.txt") as downloaded:
+                async for chunk in downloaded.body:
+                    chunks.append(chunk)
+
+        body = b"".join(chunks)
+        assert downloaded.size == len(body)
+        assert downloaded.sha256 == hashlib.sha256(body).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_node_client_maps_invalid_artifact_headers_to_protocol_error() -> None:
+    with FakeNode(FakeNodeMode.BAD_DOWNLOAD_HEADERS) as fake:
+        async with fake.client() as transport_client:
+            client = NodeClient("http://fake-node", fake.token, client=transport_client)
+            task = await client.create_task("artifact goal", "bad-headers")
+            assert (await client.get_task(task.id)).status == "success"
+
+            with pytest.raises(NodeProtocolError) as caught:
+                await client.download_artifact(task.id, "result.txt")
+
+        assert caught.value.code == "node_protocol_error"
 
 
 @pytest.mark.asyncio

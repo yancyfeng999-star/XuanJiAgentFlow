@@ -19,6 +19,7 @@ class FakeNodeMode(StrEnum):
     DELAY = "delay"
     OFFLINE = "offline"
     BAD_HASH = "bad_hash"
+    BAD_DOWNLOAD_HEADERS = "bad_download_headers"
 
 
 class CreateTaskRequest(BaseModel):
@@ -163,12 +164,15 @@ class FakeNode:
             task = self._task(task_id)
             path = self._resolve_artifact(task, artifact_path)
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            size = str(path.stat().st_size)
+            if self.mode is FakeNodeMode.BAD_DOWNLOAD_HEADERS:
+                size = "invalid"
             return StreamingResponse(
                 self._stream(path),
                 media_type="application/octet-stream",
                 headers={
                     "Content-Length": str(path.stat().st_size),
-                    "X-Artifact-Size": str(path.stat().st_size),
+                    "X-Artifact-Size": size,
                     "X-Artifact-SHA256": digest,
                 },
             )

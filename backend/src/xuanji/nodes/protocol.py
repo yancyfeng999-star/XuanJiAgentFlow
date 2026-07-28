@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,3 +35,17 @@ class NodeArtifact(NodeMessage):
 
 class NodeArtifactList(NodeMessage):
     artifacts: list[NodeArtifact]
+
+
+@dataclass(frozen=True)
+class NodeArtifactDownload:
+    body: bytes
+    size: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class NodeArtifactStream:
+    body: AsyncIterator[bytes]
+    size: int
+    sha256: str
