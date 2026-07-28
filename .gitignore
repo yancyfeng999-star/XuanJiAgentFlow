@@ -33,6 +33,6 @@ app/src-tauri/target/
 .worktrees/
 
 # Runtime project outputs
-XuanjiProjects/
-projects/
+/XuanjiProjects/
+/runtime-projects/
 *.log
