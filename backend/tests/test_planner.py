@@ -271,5 +271,49 @@ async def test_openai_provider_maps_timeout_to_stable_error(tmp_path):
     assert "vault-only-secret" not in str(exc_info.value)
 
 
+@pytest.mark.asyncio
+async def test_openai_provider_maps_connection_error_without_leaking_credentials(tmp_path):
+    vault = make_vault(tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("failed with vault-only-secret", request=request)
+
+    provider = OpenAIChatCompletionsProvider(
+        base_url="https://api.deepseek.com/v1",
+        credential_vault=vault,
+        credential_key="planner.deepseek.api_key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(PlannerError) as exc_info:
+        await provider.complete([], "deepseek-chat")
+
+    assert exc_info.value.code == "planner_provider_error"
+    assert "vault-only-secret" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_openai_provider_rejects_non_string_content(tmp_path):
+    vault = make_vault(tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": None}}]},
+        )
+
+    provider = OpenAIChatCompletionsProvider(
+        base_url="https://api.deepseek.com/v1",
+        credential_vault=vault,
+        credential_key="planner.deepseek.api_key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(PlannerError) as exc_info:
+        await provider.complete([], "deepseek-chat")
+
+    assert exc_info.value.code == "planner_provider_error"
+
+
 def test_planner_provider_protocol_describes_complete_interface():
     assert "complete" in PlannerProvider.__protocol_attrs__

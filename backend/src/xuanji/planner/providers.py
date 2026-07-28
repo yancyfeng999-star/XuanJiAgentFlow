@@ -60,6 +60,8 @@ class OpenAIChatCompletionsProvider:
                     response = await client.post(self._url, **request)
         except httpx.TimeoutException:
             raise PlannerError("planner_timeout", "planner provider timed out") from None
+        except httpx.RequestError:
+            raise PlannerError("planner_provider_error", "planner provider request failed") from None
 
         if response.status_code == 401:
             raise PlannerError(
@@ -69,6 +71,9 @@ class OpenAIChatCompletionsProvider:
         try:
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
+            if not isinstance(content, str):
+                raise TypeError("planner content must be text")
+            return content
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
             raise PlannerError("planner_provider_error", "planner provider request failed") from None
