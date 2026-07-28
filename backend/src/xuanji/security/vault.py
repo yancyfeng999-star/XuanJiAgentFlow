@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+from argon2.exceptions import HashingError
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pydantic import ValidationError
@@ -79,7 +80,14 @@ class CredentialVault:
                 for key, value in credentials.items()
             ):
                 raise ValueError("invalid credential payload")
-        except (InvalidTag, OSError, ValidationError, ValueError, TypeError):
+        except (
+            HashingError,
+            InvalidTag,
+            OSError,
+            ValidationError,
+            ValueError,
+            TypeError,
+        ):
             self.lock()
             raise VaultAuthenticationError(_AUTHENTICATION_ERROR) from None
 
@@ -96,8 +104,17 @@ class CredentialVault:
 
     def set(self, key: str, value: str) -> None:
         credentials = self._require_unlocked()
+        previous = credentials.get(key)
+        existed = key in credentials
         credentials[key] = value
-        self._persist()
+        try:
+            self._persist()
+        except Exception:
+            if existed:
+                credentials[key] = previous  # type: ignore[assignment]
+            else:
+                credentials.pop(key, None)
+            raise
 
     def get(self, key: str) -> str | None:
         return self._require_unlocked().get(key)

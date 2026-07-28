@@ -82,6 +82,42 @@ def test_invalid_tampered_kdf_parameters_have_stable_authentication_error(tmp_pa
     assert vault._key is None
 
 
+def test_short_tampered_salt_has_stable_authentication_error(tmp_path):
+    path = tmp_path / "credentials.vault"
+    vault = CredentialVault(path)
+    vault.initialize("correct password")
+    vault.lock()
+
+    document = json.loads(path.read_text())
+    document["salt"] = base64.b64encode(b"short").decode("ascii")
+    path.write_text(json.dumps(document))
+
+    with pytest.raises(
+        VaultAuthenticationError,
+        match="^invalid password or corrupted vault$",
+    ):
+        vault.unlock("correct password")
+
+    assert vault.status == "locked"
+
+
+def test_failed_update_rolls_back_in_memory_value(tmp_path, monkeypatch):
+    path = tmp_path / "credentials.vault"
+    vault = CredentialVault(path)
+    vault.initialize("correct password")
+    vault.set("token", "persisted")
+
+    def failing_write(_data):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(vault, "_atomic_write", failing_write)
+
+    with pytest.raises(OSError, match="disk full"):
+        vault.set("token", "not-persisted")
+
+    assert vault.get("token") == "persisted"
+
+
 def test_locked_vault_cannot_read_or_write_credentials(tmp_path):
     path = tmp_path / "credentials.vault"
     vault = CredentialVault(path)
