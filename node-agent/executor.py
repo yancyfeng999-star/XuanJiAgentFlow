@@ -5,8 +5,8 @@ import json
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterator
 
 import httpx
 
@@ -104,7 +104,7 @@ class NodeExecutor:
 
     def start(self, task_id: str) -> TaskRecord:
         record = self._load(task_id)
-        if record.status in {"running", "success"}:
+        if record.hermes_run_id or record.status != "queued":
             return record
         try:
             result = self.client.create_run(record.goal, task_id)
@@ -146,12 +146,20 @@ class NodeExecutor:
 
     def cancel(self, task_id: str) -> TaskRecord:
         record = self._load(task_id)
-        if record.hermes_run_id:
-            try:
-                self.client.stop_run(record.hermes_run_id)
-            except Exception:
-                pass
-        record.status = "cancelled"
+        if not record.hermes_run_id:
+            return record
+        try:
+            result = self.client.stop_run(record.hermes_run_id)
+            hermes_status = result.get("status", "unknown")
+            if hermes_status in {"stopped", "cancelled"}:
+                record.status = "cancelled"
+                record.error = None
+            else:
+                record.status = "cancelling"
+                record.error = f"Hermes stop not confirmed: {hermes_status}"
+        except Exception as exc:
+            record.status = "cancel_failed"
+            record.error = f"Cancel error: {exc}"
         record.updated_at = now_iso()
         self._save(record)
         return record
@@ -178,10 +186,42 @@ class NodeExecutor:
         return events
 
     def artifacts(self, task_id: str) -> list[dict]:
-        path = self._task_dir(task_id) / "artifacts.json"
+        task_dir = self._task_dir(task_id)
+        if not task_dir.exists():
+            raise FileNotFoundError(task_id)
+        path = task_dir / "artifacts.json"
         if not path.exists():
             return []
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def artifact(self, task_id: str, artifact_path: str) -> tuple[Path, int, str]:
+        task_dir = self._task_dir(task_id)
+        if not task_dir.exists():
+            raise FileNotFoundError(task_id)
+        relative = PurePosixPath(artifact_path)
+        if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+            raise ValueError("unsafe artifact path")
+        artifacts_dir = (task_dir / "artifacts").resolve()
+        path = (artifacts_dir / Path(*relative.parts)).resolve()
+        if artifacts_dir not in path.parents or not path.is_file():
+            raise FileNotFoundError(artifact_path)
+        size = path.stat().st_size
+        digest = self._sha256(path)
+        return path, size, digest
+
+    @staticmethod
+    def stream_artifact(path: Path, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+        with path.open("rb") as artifact:
+            while chunk := artifact.read(chunk_size):
+                yield chunk
+
+    @staticmethod
+    def _sha256(path: Path, chunk_size: int = 64 * 1024) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as artifact:
+            while chunk := artifact.read(chunk_size):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def _capture_output(self, task_id: str, hermes_state: dict) -> None:
         task_dir = self._task_dir(task_id)
@@ -196,11 +236,10 @@ class NodeExecutor:
         task_dir = self._task_dir(task_id)
         artifacts_dir = task_dir / "artifacts"
         manifest = []
-        for path in sorted(p for p in artifacts_dir.rglob("*") if p.is_file()):
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(p for p in artifacts_dir.rglob("*") if p.is_file() and not p.is_symlink()):
             manifest.append({
-                "path": str(path.relative_to(task_dir)),
+                "path": path.relative_to(artifacts_dir).as_posix(),
                 "size": path.stat().st_size,
-                "sha256": digest,
+                "sha256": self._sha256(path),
             })
         (task_dir / "artifacts.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from executor import HermesNodeClient, NodeExecutor
@@ -84,7 +85,50 @@ def create_app(
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail={"code": "task_not_found", "message": task_id})
 
+    @app.get("/v1/tasks/{task_id}/artifacts/{artifact_path:path}")
+    async def download_artifact(
+        task_id: str,
+        artifact_path: str,
+        _: None = Depends(authorize),
+    ) -> StreamingResponse:
+        try:
+            path, size, digest = executor.artifact(task_id, artifact_path)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "unsafe_artifact_path", "message": "artifact path is not allowed"},
+            ) from None
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "artifact_not_found", "message": artifact_path},
+            ) from None
+        return StreamingResponse(
+            executor.stream_artifact(path),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Length": str(size),
+                "X-Artifact-Size": str(size),
+                "X-Artifact-SHA256": digest,
+            },
+        )
+
     return app
 
 
+def main() -> None:
+    import os
+
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.getenv("XUANJI_NODE_HOST", "127.0.0.1"),
+        port=int(os.getenv("XUANJI_NODE_PORT", "8765")),
+    )
+
+
 app = create_app()
+
+if __name__ == "__main__":
+    main()
