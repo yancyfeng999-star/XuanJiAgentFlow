@@ -27,6 +27,9 @@ class ArtifactManager:
         self.projects_root.mkdir(parents=True, exist_ok=True)
         self._project_paths: dict[str, Path] = {}
 
+    def register_project(self, project: Project) -> Path:
+        return self.create_project(project)
+
     def create_project(self, project: Project) -> Path:
         root = Path(project.root_path).expanduser()
         if not root.is_absolute():

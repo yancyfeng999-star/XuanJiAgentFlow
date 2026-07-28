@@ -19,6 +19,25 @@ def _dump(model: Any) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
 
+class ConfigRepository:
+    def __init__(self, database: Database):
+        self.database = database
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        row = self.database.connection.execute(
+            "SELECT value_json FROM app_config WHERE key=?", (key,)
+        ).fetchone()
+        return json.loads(row["value_json"]) if row else None
+
+    def set(self, key: str, value: dict[str, Any]) -> None:
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO app_config(key,value_json,updated_at) VALUES (?,?,?)
+                ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at""",
+                (key, _json(value), datetime.now(timezone.utc).isoformat()),
+            )
+
+
 class ProjectRepository:
     def __init__(self, database: Database):
         self.database = database
@@ -49,6 +68,11 @@ class ProjectRepository:
     def list(self) -> list[Project]:
         rows = self.database.connection.execute("SELECT * FROM projects ORDER BY created_at,id").fetchall()
         return [Project.model_validate(dict(row)) for row in rows]
+
+    def delete(self, project_id: str) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute("DELETE FROM projects WHERE id=?", (project_id,))
+        return cursor.rowcount == 1
 
 
 class WorkflowRepository:
@@ -92,6 +116,33 @@ class WorkflowRepository:
             "SELECT * FROM workflows WHERE project_id=? ORDER BY version", (project_id,)
         ).fetchall()
         return [self._restore(row) for row in rows]
+
+    def update(self, workflow: Workflow) -> None:
+        data = _dump(workflow)
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE workflows SET goal=?,planner_provider=?,planner_model=?,status=?,graph_json=? WHERE id=?",
+                (
+                    data["goal"], data["planner_provider"], data["planner_model"],
+                    data["status"], _json(data["graph_json"]), data["id"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(workflow.id)
+            connection.execute("DELETE FROM tasks WHERE workflow_id=?", (workflow.id,))
+            for task in workflow.tasks:
+                task_data = _dump(task)
+                connection.execute(
+                    """INSERT INTO tasks(id,workflow_id,title,description,prompt,agent_type,dependencies_json,
+                    execution_policy_json,retry_policy_json,expected_outputs_json,ui_position_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        task_data["id"], task_data["workflow_id"], task_data["title"], task_data["description"],
+                        task_data["prompt"], task_data["agent_type"], _json(task_data["dependencies"]),
+                        _json(task_data["execution_policy"]), _json(task_data["retry_policy"]),
+                        _json(task_data["expected_outputs"]), _json(task_data["ui_position"]),
+                    ),
+                )
 
     def _restore(self, row) -> Workflow:
         task_rows = self.database.connection.execute(
@@ -291,6 +342,14 @@ class NodeRepository:
     def __init__(self, database: Database):
         self.database = database
 
+    def get(self, node_id: str) -> HermesNode | None:
+        row = self.database.connection.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data["capabilities_json"] = json.loads(data["capabilities_json"])
+        return HermesNode.model_validate(data)
+
     def list(self) -> list[HermesNode]:
         rows = self.database.connection.execute("SELECT * FROM nodes ORDER BY id").fetchall()
         nodes = []
@@ -316,6 +375,11 @@ class NodeRepository:
                 running_tasks=excluded.running_tasks,success_rate=excluded.success_rate,last_seen_at=excluded.last_seen_at""",
                 values,
             )
+
+    def delete(self, node_id: str) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute("DELETE FROM nodes WHERE id=?", (node_id,))
+        return cursor.rowcount == 1
 
 
 class ArtifactRepository:

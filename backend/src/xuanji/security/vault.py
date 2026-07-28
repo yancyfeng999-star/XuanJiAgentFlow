@@ -119,6 +119,18 @@ class CredentialVault:
     def get(self, key: str) -> str | None:
         return self._require_unlocked().get(key)
 
+    def delete(self, key: str) -> bool:
+        credentials = self._require_unlocked()
+        if key not in credentials:
+            return False
+        previous = credentials.pop(key)
+        try:
+            self._persist()
+        except Exception:
+            credentials[key] = previous
+            raise
+        return True
+
     def _require_unlocked(self) -> dict[str, str]:
         if self._key is None or self._credentials is None:
             raise VaultLockedError(_LOCKED_ERROR)

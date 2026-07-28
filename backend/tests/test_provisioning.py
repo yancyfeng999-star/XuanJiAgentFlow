@@ -16,7 +16,13 @@ class FakeSSHRunner(SSHRunner):
         self.commands: list[str] = []
         self.responses: dict[str, tuple[int, str, str]] = {}
 
-    def run(self, command: str, timeout: float = 30) -> tuple[int, str, str]:
+    def run(
+        self,
+        command: str,
+        timeout: float = 30,
+        *,
+        input_text: str | None = None,
+    ) -> tuple[int, str, str]:
         self.commands.append(command)
         return self.responses.get(command, (0, "", ""))
 
@@ -71,3 +77,23 @@ def test_provisioning_stops_on_ssh_failure():
 
     assert len(steps) == 1
     assert steps[0]["success"] is False
+
+
+def test_ssh_uses_host_key_verification_and_api_token_via_stdin(monkeypatch, tmp_path: Path):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, "ok", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    known_hosts = tmp_path / "known_hosts"
+    runner = SSHRunner(SSHHost(host="remote.test"), known_hosts_path=known_hosts)
+    assert "StrictHostKeyChecking=yes" in runner._base_args()
+    assert f"UserKnownHostsFile={known_hosts}" in runner._base_args()
+
+    secret = "token-must-not-be-argv"
+    runner.start_api_server(8642, secret)
+    args, kwargs = calls[-1]
+    assert secret not in " ".join(args)
+    assert kwargs["input"] == secret

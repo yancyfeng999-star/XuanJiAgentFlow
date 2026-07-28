@@ -1,0 +1,298 @@
+from __future__ import annotations
+
+import asyncio
+import inspect
+from collections.abc import AsyncIterator, Callable, Coroutine, Mapping
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Protocol
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from xuanji.artifacts.manager import ArtifactManager
+from xuanji.domain.enums import RunStatus
+from xuanji.domain.models import HermesNode
+from xuanji.execution import ExecutionManager, RecoveryService
+from xuanji.nodes import NodeClient
+from xuanji.planner.providers import OpenAIChatCompletionsProvider
+from xuanji.planner.service import PlannerService
+from xuanji.provisioning import ProvisioningService
+from xuanji.security import CredentialVault, VaultLockedError
+from xuanji.storage.database import Database
+from xuanji.storage.repositories import (
+    ArtifactRepository,
+    ConfigRepository,
+    EventRepository,
+    NodeRepository,
+    ProjectRepository,
+    RunRepository,
+    WorkflowRepository,
+)
+
+from .errors import install_error_handlers
+
+
+class Planner(Protocol):
+    async def plan(self, project_id: str, goal: str, context: str, constraints: dict): ...
+
+
+PlannerFactory = Callable[[dict[str, str], CredentialVault], Planner]
+NodeClientFactory = Callable[[str, str], NodeClient]
+
+
+@dataclass(frozen=True)
+class CoordinatorConfig:
+    data_dir: Path
+    poll_interval: float = 1.0
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "coordinator.db"
+
+    @property
+    def projects_dir(self) -> Path:
+        return self.data_dir / "projects"
+
+    @property
+    def vault_path(self) -> Path:
+        return self.data_dir / "credentials.vault"
+
+
+@dataclass
+class Services:
+    config: CoordinatorConfig
+    database: Database
+    vault: CredentialVault
+    planner: Planner | None
+    planner_factory: PlannerFactory
+    artifacts: ArtifactManager
+    execution: ExecutionManager
+    recovery: RecoveryService
+    provisioning: ProvisioningService
+    projects: ProjectRepository
+    workflows: WorkflowRepository
+    runs: RunRepository
+    nodes: NodeRepository
+    artifact_repository: ArtifactRepository
+    events: EventRepository
+    app_config: ConfigRepository
+    node_clients: dict[str, NodeClient]
+    node_client_factory: NodeClientFactory
+    background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+
+    @staticmethod
+    def node_credential_key(node_id: str) -> str:
+        return f"node.{node_id}.token"
+
+    async def install_node_client(self, node: HermesNode, credential: str | None = None) -> bool:
+        token = credential
+        if token is None:
+            token = self.vault.get(self.node_credential_key(node.id))
+        if not token:
+            await self.remove_node_client(node.id)
+            return False
+        replacement = self.node_client_factory(str(node.api_url), token)
+        previous = self.node_clients.get(node.id)
+        self.node_clients[node.id] = replacement
+        self.execution.node_clients[node.id] = replacement
+        if previous is not None and previous is not replacement:
+            await _close(previous)
+        return True
+
+    async def remove_node_client(self, node_id: str) -> None:
+        previous = self.node_clients.pop(node_id, None)
+        self.execution.node_clients.pop(node_id, None)
+        if previous is not None:
+            await _close(previous)
+
+    async def rebuild_node_clients(self) -> None:
+        try:
+            for node in self.nodes.list():
+                await self.install_node_client(node)
+        except VaultLockedError:
+            for node_id in list(self.node_clients):
+                await self.remove_node_client(node_id)
+
+    async def close_node_clients(self) -> None:
+        for node_id in list(self.node_clients):
+            await self.remove_node_client(node_id)
+
+    def spawn_run_task(
+        self,
+        run_id: str,
+        operation: str,
+        coroutine: Coroutine[Any, Any, Any],
+    ) -> None:
+        task = asyncio.create_task(coroutine)
+        self.background_tasks.add(task)
+
+        def completed(done: asyncio.Task[Any]) -> None:
+            self.background_tasks.discard(done)
+            if done.cancelled():
+                return
+            error = done.exception()
+            if error is None:
+                return
+            run = self.runs.get(run_id)
+            if run is not None and run.status not in {
+                RunStatus.CANCELLED,
+                RunStatus.SUCCESS,
+                RunStatus.FAILED,
+            }:
+                run.status = RunStatus.FAILED
+                run.completed_at = datetime.now(timezone.utc)
+                self.runs.update(run)
+            self.events.append(
+                run_id,
+                "run.background_failed",
+                {
+                    "code": "background_task_failed",
+                    "operation": operation,
+                    "run_id": run_id,
+                },
+            )
+
+        task.add_done_callback(completed)
+
+    async def drain_background_tasks(self) -> None:
+        tasks = list(self.background_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self.background_tasks.clear()
+
+
+async def _close(resource: Any) -> None:
+    result = resource.close()
+    if inspect.isawaitable(result):
+        await result
+
+
+def _default_planner_factory(config: dict[str, str], vault: CredentialVault) -> Planner:
+    provider = OpenAIChatCompletionsProvider(
+        base_url=config["base_url"],
+        credential_vault=vault,
+        credential_key=config["credential_key"],
+    )
+    return PlannerService(provider, model=config["model"], provider_name="openai-compatible")
+
+
+def create_coordinator_app(
+    config: CoordinatorConfig,
+    *,
+    planner: PlannerService | Planner | None = None,
+    planner_factory: PlannerFactory | None = None,
+    node_clients: Mapping[str, NodeClient] | None = None,
+    node_client_factory: NodeClientFactory | None = None,
+    execution: ExecutionManager | None = None,
+    recovery: RecoveryService | None = None,
+    provisioning: ProvisioningService | None = None,
+) -> FastAPI:
+    build_planner = planner_factory or _default_planner_factory
+    build_node_client = node_client_factory or (lambda base_url, token: NodeClient(base_url, token))
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        config.data_dir.mkdir(parents=True, exist_ok=True)
+        config.projects_dir.mkdir(parents=True, exist_ok=True)
+        database = Database(config.db_path)
+        database.migrate()
+        vault = CredentialVault(config.vault_path)
+        artifacts = ArtifactManager(config.projects_dir)
+        clients = dict(node_clients or {})
+        manager = execution or ExecutionManager(
+            database,
+            artifacts,
+            clients,
+            poll_interval=config.poll_interval,
+        )
+        manager.node_clients = clients
+        recovery_service = recovery or RecoveryService(manager)
+        projects = ProjectRepository(database)
+        config_repository = ConfigRepository(database)
+        planner_config = config_repository.get("planner")
+        active_planner = planner or (
+            build_planner(planner_config, vault) if planner_config is not None else None
+        )
+        services = Services(
+            config=config,
+            database=database,
+            vault=vault,
+            planner=active_planner,
+            planner_factory=build_planner,
+            artifacts=artifacts,
+            execution=manager,
+            recovery=recovery_service,
+            provisioning=provisioning or ProvisioningService(),
+            projects=projects,
+            workflows=WorkflowRepository(database),
+            runs=RunRepository(database),
+            nodes=NodeRepository(database),
+            artifact_repository=ArtifactRepository(database),
+            events=EventRepository(database),
+            app_config=config_repository,
+            node_clients=clients,
+            node_client_factory=build_node_client,
+        )
+        app.state.services = services
+        try:
+            for project in projects.list():
+                artifacts.register_project(project)
+            if node_clients is None:
+                await services.rebuild_node_clients()
+            await recovery_service.recover_all()
+            yield
+        finally:
+            await services.drain_background_tasks()
+            await manager.close()
+            await services.close_node_clients()
+            vault.lock()
+            database.close()
+
+    app = FastAPI(title="璇玑 Coordinator", version="2.0.0", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["tauri://localhost", "http://tauri.localhost"],
+        allow_origin_regex=r"^http://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    install_error_handlers(app)
+
+    from .artifacts import router as artifacts_router
+    from .events import router as events_router
+    from .nodes import router as nodes_router
+    from .planner import router as planner_router
+    from .projects import router as projects_router
+    from .runs import router as runs_router
+    from .security import router as security_router
+    from .workflows import router as workflows_router
+
+    for router in (
+        projects_router,
+        workflows_router,
+        runs_router,
+        nodes_router,
+        security_router,
+        planner_router,
+        artifacts_router,
+        events_router,
+    ):
+        app.include_router(router)
+
+    @app.get("/api/status")
+    async def status() -> dict[str, str]:
+        return {"status": "ok", "version": "2.0.0"}
+
+    return app
+
+
+def get_default_app() -> FastAPI:
+    return create_coordinator_app(CoordinatorConfig(Path.home() / ".xuanji"))
+
+
+app = get_default_app()

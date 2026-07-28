@@ -55,6 +55,10 @@ class NodeClient:
     def __repr__(self) -> str:
         return f"NodeClient(base_url={self._base_url!r})"
 
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+
     async def health(self) -> NodeHealth:
         return await self._request("GET", "/v1/health", NodeHealth)
 

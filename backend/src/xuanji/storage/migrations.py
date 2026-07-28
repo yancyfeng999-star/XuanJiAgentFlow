@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from .database import Database
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 MIGRATION_1 = """
 CREATE TABLE projects (
@@ -102,7 +102,15 @@ CREATE TABLE events (
 CREATE INDEX idx_events_run_id ON events(run_id, event_id);
 """
 
-MIGRATIONS: dict[int, str | Callable] = {1: MIGRATION_1}
+MIGRATION_2 = """
+CREATE TABLE app_config (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+MIGRATIONS: dict[int, str | Callable] = {1: MIGRATION_1, 2: MIGRATION_2}
 
 
 def migrate(database: Database) -> None:

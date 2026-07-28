@@ -16,13 +16,15 @@ class SSHHost:
 class SSHRunner:
     """Executes SSH commands for remote node provisioning."""
 
-    def __init__(self, host: SSHHost) -> None:
+    def __init__(self, host: SSHHost, *, known_hosts_path: str | Path | None = None) -> None:
         self.host = host
+        self.known_hosts_path = Path(known_hosts_path or Path.home() / ".ssh" / "known_hosts")
 
     def _base_args(self) -> list[str]:
         args = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={self.known_hosts_path}",
             "-o", "ConnectTimeout=10",
             "-o", "BatchMode=yes",
             "-p", str(self.host.port),
@@ -32,9 +34,21 @@ class SSHRunner:
         args.append(f"{self.host.user}@{self.host.host}")
         return args
 
-    def run(self, command: str, timeout: float = 30) -> tuple[int, str, str]:
+    def run(
+        self,
+        command: str,
+        timeout: float = 30,
+        *,
+        input_text: str | None = None,
+    ) -> tuple[int, str, str]:
         args = self._base_args() + [command]
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            input=input_text,
+        )
         return result.returncode, result.stdout, result.stderr
 
     def check_hermes(self) -> dict:
@@ -55,10 +69,12 @@ class SSHRunner:
 
     def start_api_server(self, port: int = 8642, api_key: str = "") -> dict:
         cmd = f"hermes config set api_server.enabled true && hermes config set api_server.port {port}"
+        input_text = None
         if api_key:
-            cmd += f" && hermes config set api_server.api_key {api_key}"
+            cmd += " && IFS= read -r api_key && hermes config set api_server.api_key \"$api_key\""
+            input_text = api_key
         cmd += " && hermes gateway start 2>&1"
-        code, out, err = self.run(cmd, timeout=30)
+        code, out, err = self.run(cmd, timeout=30, input_text=input_text)
         return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
 
     def stop_api_server(self) -> dict:
@@ -72,7 +88,12 @@ class SSHRunner:
 
     def deploy_node_agent(self, local_package_path: str, remote_dir: str = "~/.xuanji-node") -> dict:
         # Upload package
-        scp_args = ["scp", "-o", "StrictHostKeyChecking=no", "-P", str(self.host.port)]
+        scp_args = [
+            "scp",
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={self.known_hosts_path}",
+            "-P", str(self.host.port),
+        ]
         if self.host.key_path:
             scp_args.extend(["-i", self.host.key_path])
         scp_args.extend([local_package_path, f"{self.host.user}@{self.host.host}:{remote_dir}/package.tar.gz"])

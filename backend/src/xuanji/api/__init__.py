@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from .coordinator import create_coordinator_app, CoordinatorConfig
+from .app import CoordinatorConfig, app, create_coordinator_app, get_default_app
 
-__all__ = ["create_coordinator_app", "CoordinatorConfig"]
+__all__ = ["CoordinatorConfig", "app", "create_coordinator_app", "get_default_app"]
