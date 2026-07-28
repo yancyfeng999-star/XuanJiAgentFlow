@@ -61,7 +61,9 @@ if [[ "$SKIP_E2E" == false ]]; then
     echo "=== 6. Frontend E2E tests ==="
     (cd "$APP_DIR" && npm run test:e2e)
   else
-    echo "=== 6. Frontend E2E tests (skipped: Playwright configuration not yet present) ==="
+    echo "Frontend E2E verification failed: Playwright configuration not found." >&2
+    echo "Use --skip-e2e to explicitly skip frontend E2E tests." >&2
+    exit 1
   fi
 fi
 
