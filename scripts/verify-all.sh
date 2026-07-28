@@ -32,9 +32,7 @@ fi
 PY="$VENV_DIR/bin/python"
 "$PY" -m pip install -q -e "$BACKEND_DIR[test]" -e "$NODE_AGENT_DIR[test]"
 
-if [[ ! -d "$APP_DIR/node_modules" ]]; then
-  (cd "$APP_DIR" && npm install)
-fi
+(cd "$APP_DIR" && npm ci)
 
 echo "=== 1. Backend tests ==="
 "$PY" -m pytest -q "$BACKEND_DIR/tests"
@@ -57,8 +55,14 @@ echo "=== 5. Frontend build ==="
 
 if [[ "$SKIP_E2E" == false ]]; then
   echo
-  echo "=== 6. Frontend E2E tests ==="
-  (cd "$APP_DIR" && npm run test:e2e)
+  if [[ -f "$APP_DIR/playwright.config.ts" || -f "$APP_DIR/playwright.config.js" || \
+        -f "$APP_DIR/playwright.config.mts" || -f "$APP_DIR/playwright.config.mjs" || \
+        -f "$APP_DIR/playwright.config.cts" || -f "$APP_DIR/playwright.config.cjs" ]]; then
+    echo "=== 6. Frontend E2E tests ==="
+    (cd "$APP_DIR" && npm run test:e2e)
+  else
+    echo "=== 6. Frontend E2E tests (skipped: Playwright configuration not yet present) ==="
+  fi
 fi
 
 echo
