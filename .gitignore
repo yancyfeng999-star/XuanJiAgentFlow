@@ -21,6 +21,8 @@ htmlcov/
 coverage/
 playwright-report/
 test-results/
+blob-report/
+playwright/.cache/
 
 # Rust / Tauri
 app/src-tauri/target/
@@ -32,7 +34,15 @@ app/src-tauri/target/
 .workbuddy/
 .worktrees/
 
-# Runtime project outputs
+# Runtime project outputs (do NOT use a broad projects/ rule — that would hide source)
 /XuanjiProjects/
 /runtime-projects/
+**/.xuanji-projects/
+.e2e/
+.tmp-build-backups/
 *.log
+
+# PyInstaller
+backend/build/
+backend/dist/
+*.spec.bak
