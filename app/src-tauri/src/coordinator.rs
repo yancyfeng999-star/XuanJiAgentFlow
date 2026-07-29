@@ -593,14 +593,23 @@ mod tests {
     #[test]
     fn start_fails_on_health_timeout() {
         let dir = tempfile_dir("health-timeout");
-        // Report a port that never serves HTTP.
-        let free = find_free_port().unwrap();
+        // Bind a real local port, announce it, but never accept HTTP — avoids racing
+        // free-port reuse and guarantees health checks fail until timeout.
         let binary = write_fake_binary(
             &dir,
             "slow-coordinator",
-            &format!(
-                "#!/bin/sh\necho XUANJI_PORT={free}\n# hold the process open without listening\nsleep 60\n"
-            ),
+            r#"#!/usr/bin/env python3
+import socket
+import sys
+import time
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+port = sock.getsockname()[1]
+print(f"XUANJI_PORT={port}", flush=True)
+sys.stdout.flush()
+time.sleep(60)
+"#,
         );
         let supervisor = CoordinatorSupervisor::new();
         let err = supervisor
@@ -609,7 +618,7 @@ mod tests {
                 data_dir: dir.clone(),
                 allow_any_binary: true,
                 health_timeout: Duration::from_millis(400),
-                port_timeout: Duration::from_secs(2),
+                port_timeout: Duration::from_secs(5),
                 ..StartOptions::default()
             })
             .expect_err("health timeout");
@@ -617,8 +626,6 @@ mod tests {
             matches!(err, CoordinatorError::HealthTimeout),
             "unexpected: {err:?}"
         );
-        // Failed start leaves process cleaned? port waiter already killed if port timeout;
-        // for health timeout the child is still held only on success path — ensure stop ok.
         let _ = supervisor.stop();
     }
 
