@@ -250,6 +250,11 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
     return {
       ...initialState,
       setCoordinatorBaseUrl: (coordinatorBaseUrl) => {
+        const normalized = coordinatorBaseUrl.trim().replace(/\/+$/, '');
+        const current = get().coordinatorBaseUrl.trim().replace(/\/+$/, '');
+        if (normalized === current) {
+          return;
+        }
         settingsRequest += 1;
         workspaceRequest += 1;
         generation += 1;
@@ -257,9 +262,9 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         workflowRequest += 1;
         nodesRequest += 1;
         nodeRequests.clear();
-        workspaceClient = createApiClient(coordinatorBaseUrl);
+        workspaceClient = createApiClient(normalized);
         set({
-          coordinatorBaseUrl,
+          coordinatorBaseUrl: normalized,
           projects: [],
           project: null,
           workflow: null,

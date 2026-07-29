@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "placeholder sidecar — replace with PyInstaller binary"
+exit 1

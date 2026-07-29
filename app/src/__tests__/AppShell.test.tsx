@@ -56,11 +56,17 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('Xuanji 2.0 workspace shell', () => {
-  it('renders exactly the four core workspace regions', () => {
-    render(<AppShell />);
-
+async function renderReadyShell() {
+  render(<AppShell />);
+  await waitFor(() => {
     expect(screen.getByRole('navigation', { name: '项目资源栏' })).toBeInTheDocument();
+  });
+}
+
+describe('Xuanji 2.0 workspace shell', () => {
+  it('renders exactly the four core workspace regions after coordinator is healthy', async () => {
+    await renderReadyShell();
+
     expect(screen.getByRole('banner', { name: '顶部运行栏' })).toBeInTheDocument();
     expect(screen.getByRole('main', { name: '工作流画布' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: '节点检查器' })).toBeInTheDocument();
@@ -68,7 +74,7 @@ describe('Xuanji 2.0 workspace shell', () => {
   });
 
   it('shows a selected task from the server workflow snapshot in the inspector', async () => {
-    render(<AppShell />);
+    await renderReadyShell();
     await waitFor(() => expect(client.getProjectWorkflow).toHaveBeenCalledWith(project.id));
 
     act(() => useWorkspaceStore.getState().selectTask('server-task'));
@@ -77,11 +83,13 @@ describe('Xuanji 2.0 workspace shell', () => {
     expect(screen.getByLabelText('任务 Prompt')).toHaveValue('只使用服务端返回的任务 Prompt。');
   });
 
-  it('shows run status and progress from the unified workspace store', () => {
-    useWorkspaceStore.getState().setRunStatus('running');
-    useWorkspaceStore.getState().setRunProgress(42);
+  it('shows run status and progress from the unified workspace store', async () => {
+    await renderReadyShell();
 
-    render(<AppShell />);
+    act(() => {
+      useWorkspaceStore.getState().setRunStatus('running');
+      useWorkspaceStore.getState().setRunProgress(42);
+    });
 
     expect(screen.getByText('运行中')).toBeInTheDocument();
     expect(screen.getByText('42%')).toBeInTheDocument();

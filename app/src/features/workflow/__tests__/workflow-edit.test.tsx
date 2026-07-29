@@ -49,6 +49,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+async function renderReadyShell() {
+  render(<AppShell />);
+  await screen.findByRole('navigation', { name: '项目资源栏' });
+}
+
 describe('editable workflow workspace', () => {
   it('loads a project and edits a selected task until review freezes it', async () => {
     render(<AppShell />);
@@ -103,7 +108,7 @@ describe('editable workflow workspace', () => {
     vi.mocked(client.getPlannerConfig).mockResolvedValue({
       base_url: 'https://planner.test/v1', model: 'model', credential_key: 'planner.primary', credential_configured: null,
     });
-    render(<AppShell />);
+    await renderReadyShell();
 
     fireEvent.click(screen.getByRole('button', { name: 'Hermes 节点' }));
 
@@ -125,7 +130,7 @@ describe('editable workflow workspace', () => {
     vi.mocked(client.provisionNode).mockResolvedValue({
       node_id: 'remote-1', completed: false, steps: [{ step: 'verify_api_server', online: false }],
     });
-    render(<AppShell />);
+    await renderReadyShell();
     fireEvent.click(screen.getByRole('button', { name: 'Hermes 节点' }));
     await screen.findByText('Token 已配置');
     fireEvent.change(screen.getByLabelText('Hermes 端口'), { target: { value: '8642' } });
