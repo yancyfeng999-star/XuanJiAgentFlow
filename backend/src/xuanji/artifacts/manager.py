@@ -33,13 +33,18 @@ class ArtifactManager:
     def create_project(self, project: Project) -> Path:
         root = Path(project.root_path).expanduser()
         if not root.is_absolute():
-            root = self.projects_root / root
-        root = root.resolve()
-        if root != self.projects_root and self.projects_root not in root.parents:
-            raise UnsafePathError("project root must be inside configured projects root")
+            # Relative paths stay under the managed projects root.
+            root = (self.projects_root / root).resolve()
+        else:
+            # Absolute paths may be user-selected directories outside the app data dir.
+            root = root.resolve()
+            if root in {Path("/"), Path.home().anchor}:
+                raise UnsafePathError("project root cannot be a filesystem root")
         root.mkdir(parents=True, exist_ok=True)
         for relative in ("workflow", "runs", "shared", "deliverables"):
             (root / relative).mkdir(exist_ok=True)
+        # Keep the resolved absolute path on the project for persistence.
+        project.root_path = str(root)
         self._project_paths[project.id] = root
         self._atomic_json(root / "project.json", project.model_dump(mode="json"))
         return root

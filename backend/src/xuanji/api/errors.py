@@ -120,7 +120,15 @@ def install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(status_code=409, content=error_payload("vault_error", str(error)))
 
     @app.exception_handler(UnsafePathError)
-    async def unsafe_path(_: Request, __: UnsafePathError) -> JSONResponse:
+    async def unsafe_path(_: Request, error: UnsafePathError) -> JSONResponse:
+        # Path traversal during artifact resolve → 404; other root/layout issues
+        # should still surface a stable non-secret error without pretending "artifact".
+        message = str(error)
+        if "project root" in message.lower():
+            return JSONResponse(
+                status_code=400,
+                content=error_payload("invalid_project_root", message or "project root is not allowed"),
+            )
         return JSONResponse(
             status_code=404,
             content=error_payload("artifact_not_found", "artifact not found"),

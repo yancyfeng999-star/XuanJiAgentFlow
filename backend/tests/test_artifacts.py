@@ -10,6 +10,19 @@ from xuanji.domain.enums import TaskStatus
 from xuanji.domain.models import Project, TaskAttempt, Workflow
 
 
+def test_create_project_allows_absolute_root_outside_projects_root(tmp_path):
+    managed = tmp_path / "managed"
+    external = tmp_path / "user" / "picked"
+    manager = ArtifactManager(managed)
+    project = Project(id="project_external", name="External", root_path=str(external))
+
+    root = manager.create_project(project)
+
+    assert root == external.resolve()
+    assert (root / "workflow").is_dir()
+    assert (root / "project.json").is_file()
+
+
 def test_create_project_workflow_run_and_task_layout(tmp_path):
     manager = ArtifactManager(tmp_path)
     project = Project(id="project_1", name="Demo", root_path=str(tmp_path / "project_1"))

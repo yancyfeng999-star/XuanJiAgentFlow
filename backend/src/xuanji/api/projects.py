@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
+from xuanji.artifacts.manager import UnsafePathError
 from xuanji.domain.models import Project
 
 from .errors import APIError
@@ -39,7 +40,15 @@ async def create_project(payload: CreateProjectRequest, request: Request) -> dic
     project_id = f"project-{uuid.uuid4().hex[:12]}"
     root = Path(payload.root_path) if payload.root_path else services.config.projects_dir / project_id
     project = Project(id=project_id, name=payload.name, root_path=str(root))
-    services.artifacts.create_project(project)
+    try:
+        services.artifacts.create_project(project)
+    except UnsafePathError as error:
+        raise APIError(
+            400,
+            "invalid_project_root",
+            str(error) or "project root is not allowed",
+            {"root_path": str(root)},
+        ) from None
     services.projects.create(project)
     return project.model_dump(mode="json")
 

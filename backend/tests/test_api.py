@@ -197,6 +197,20 @@ def test_lifespan_resources_are_closed_after_context(tmp_path: Path) -> None:
     fake.close()
 
 
+def test_project_accepts_user_selected_external_root(api_harness, tmp_path: Path) -> None:
+    client, _, _, _ = api_harness
+    external = tmp_path / "user-selected-project"
+    response = client.post(
+        "/api/projects",
+        json={"name": "External", "root_path": str(external)},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert Path(body["root_path"]) == external.resolve()
+    assert (external / "workflow").is_dir()
+    assert (external / "project.json").is_file()
+
+
 def test_project_crud_and_structured_not_found(api_harness) -> None:
     client, _, _, _ = api_harness
     project = create_project(client)
