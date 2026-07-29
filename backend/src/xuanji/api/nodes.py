@@ -5,10 +5,11 @@ import shutil
 from typing import Any
 
 from fastapi import APIRouter, Request, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xuanji.domain.models import HermesNode
 from xuanji.provisioning import SSHHost
+from xuanji.provisioning.ssh import provisioning_succeeded
 from xuanji.security import VaultLockedError
 
 from .errors import APIError
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api/nodes", tags=["nodes"])
 class CreateNodeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1)
+    id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9._-]+$")
     name: str = Field(min_length=1)
     kind: str
     api_url: str
@@ -33,6 +34,13 @@ class CreateNodeRequest(BaseModel):
     running_tasks: int = Field(default=0, ge=0)
     success_rate: float = Field(default=1.0, ge=0, le=1)
     credential: str | None = None
+
+    @field_validator("id")
+    @classmethod
+    def reject_dot_segments(cls, value: str) -> str:
+        if value in {".", ".."}:
+            raise ValueError("node id cannot be a dot path segment")
+        return value
 
 
 class UpdateNodeRequest(BaseModel):
@@ -67,6 +75,14 @@ def _node(request: Request, node_id: str) -> HermesNode:
     return node
 
 
+def _response(request: Request, node: HermesNode) -> dict:
+    services = _services(request)
+    configured = None
+    if services.vault.status == "unlocked":
+        configured = services.vault.get(services.node_credential_key(node.id)) is not None
+    return {**node.model_dump(mode="json"), "credential_configured": configured}
+
+
 async def _configure_client(request: Request, node: HermesNode, credential: str | None) -> None:
     services = _services(request)
     if credential is not None:
@@ -79,7 +95,7 @@ async def _configure_client(request: Request, node: HermesNode, credential: str 
 
 @router.get("")
 async def list_nodes(request: Request) -> list[dict]:
-    return [node.model_dump(mode="json") for node in _services(request).nodes.list()]
+    return [_response(request, node) for node in _services(request).nodes.list()]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -92,7 +108,7 @@ async def create_node(payload: CreateNodeRequest, request: Request) -> dict:
     except Exception:
         services.nodes.delete(node.id)
         raise
-    return node.model_dump(mode="json")
+    return _response(request, node)
 
 
 @router.patch("/{node_id}")
@@ -103,19 +119,23 @@ async def update_node(node_id: str, payload: UpdateNodeRequest, request: Request
     services = _services(request)
     services.nodes.upsert(updated)
     await _configure_client(request, updated, payload.credential)
-    return updated.model_dump(mode="json")
+    return _response(request, updated)
 
 
 @router.delete("/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_node(node_id: str, request: Request) -> Response:
     _node(request, node_id)
     services = _services(request)
+    if services.vault.status == "locked":
+        raise APIError(
+            423,
+            "vault_locked",
+            "credential vault is locked",
+            {"node_id": node_id},
+        )
     services.nodes.delete(node_id)
     await services.remove_node_client(node_id)
-    try:
-        services.vault.delete(services.node_credential_key(node_id))
-    except VaultLockedError:
-        pass
+    services.vault.delete(services.node_credential_key(node_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -173,7 +193,7 @@ async def provision_node(
     )
     return {
         "node_id": node_id,
-        "completed": bool(steps) and all(step.get("success", step.get("installed", True)) for step in steps),
+        "completed": provisioning_succeeded(steps),
         "steps": steps,
     }
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from xuanji.provisioning.ssh import SSHHost, SSHRunner, ProvisioningService
+from xuanji.provisioning.ssh import SSHHost, SSHRunner, ProvisioningService, provisioning_succeeded
 
 
 class FakeSSHRunner(SSHRunner):
@@ -65,6 +65,15 @@ def test_provisioning_workflow_success():
     assert steps[3]["step"] == "start_api_server"
     assert steps[4]["step"] == "verify_api_server"
     assert steps[4]["online"] is True
+
+
+def test_provisioning_requires_verified_api_server_online():
+    steps = [
+        {"step": "ssh_connect", "success": True},
+        {"step": "verify_api_server", "online": False},
+    ]
+
+    assert provisioning_succeeded(steps) is False
 
 
 def test_provisioning_stops_on_ssh_failure():

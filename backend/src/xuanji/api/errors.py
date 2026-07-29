@@ -51,6 +51,17 @@ def error_payload(code: str, message: str, details: Any | None = None) -> dict[s
     }
 
 
+def safe_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for error in errors:
+        item: dict[str, Any] = {}
+        for key in ("loc", "type", "msg", "url"):
+            if key in error:
+                item[key] = error[key]
+        sanitized.append(item)
+    return sanitized
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIError)
     async def api_error(_: Request, error: APIError) -> JSONResponse:
@@ -64,7 +75,11 @@ def install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content=jsonable_encoder(
-                error_payload("validation_error", "request validation failed", error.errors())
+                error_payload(
+                    "validation_error",
+                    "request validation failed",
+                    safe_validation_errors(error.errors()),
+                )
             ),
         )
 
@@ -73,7 +88,11 @@ def install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content=jsonable_encoder(
-                error_payload("validation_error", "data validation failed", error.errors())
+                error_payload(
+                    "validation_error",
+                    "data validation failed",
+                    safe_validation_errors(error.errors()),
+                )
             ),
         )
 

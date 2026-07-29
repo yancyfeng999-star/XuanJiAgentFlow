@@ -109,6 +109,17 @@ class SSHRunner:
         return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
 
 
+def provisioning_succeeded(steps: list[dict]) -> bool:
+    if not steps or steps[-1].get("step") != "verify_api_server":
+        return False
+    if steps[-1].get("online") is not True:
+        return False
+    return all(
+        step.get("success", step.get("installed", step.get("online", False))) is True
+        for step in steps
+    )
+
+
 class ProvisioningService:
     """High-level provisioning workflow."""
 

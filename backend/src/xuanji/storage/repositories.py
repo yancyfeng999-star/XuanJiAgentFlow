@@ -117,6 +117,15 @@ class WorkflowRepository:
         ).fetchall()
         return [self._restore(row) for row in rows]
 
+    def get_active(self, project_id: str) -> Workflow | None:
+        row = self.database.connection.execute(
+            """SELECT workflows.* FROM workflows
+            JOIN projects ON projects.id=workflows.project_id
+            WHERE workflows.project_id=? AND workflows.version=projects.active_workflow_version""",
+            (project_id,),
+        ).fetchone()
+        return self._restore(row) if row else None
+
     def update(self, workflow: Workflow) -> None:
         data = _dump(workflow)
         with self.database.transaction() as connection:

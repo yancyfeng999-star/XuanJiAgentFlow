@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, ValidationError
 from xuanji.domain.enums import WorkflowStatus
 from xuanji.domain.models import Task, Workflow
 
-from .errors import APIError
+from .errors import APIError, safe_validation_errors
 
 router = APIRouter(tags=["workflows"])
 
@@ -63,6 +63,15 @@ async def plan(project_id: str, payload: PlanRequest, request: Request) -> dict:
     return workflow.model_dump(mode="json")
 
 
+@router.get("/api/projects/{project_id}/workflow")
+async def get_project_workflow(project_id: str, request: Request) -> dict | None:
+    services = _services(request)
+    if services.projects.get(project_id) is None:
+        raise APIError(404, "project_not_found", "project not found", {"project_id": project_id})
+    workflow = services.workflows.get_active(project_id)
+    return workflow.model_dump(mode="json") if workflow else None
+
+
 @router.get("/api/workflows/{workflow_id}")
 async def get_workflow(workflow_id: str, request: Request) -> dict:
     return _workflow(request, workflow_id).model_dump(mode="json")
@@ -84,7 +93,12 @@ async def update_workflow(workflow_id: str, payload: UpdateWorkflowRequest, requ
         )
         updated = Workflow.model_validate(updated.model_dump())
     except ValidationError as error:
-        raise APIError(422, "workflow_invalid", "workflow graph is invalid", error.errors()) from None
+        raise APIError(
+            422,
+            "workflow_invalid",
+            "workflow graph is invalid",
+            {"errors": safe_validation_errors(error.errors())},
+        ) from None
     services.workflows.update(updated)
     services.artifacts.save_workflow(updated.project_id, updated)
     return updated.model_dump(mode="json")

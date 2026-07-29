@@ -222,11 +222,63 @@ def test_project_crud_and_structured_not_found(api_harness) -> None:
     assert_error(client.get(f"/api/projects/{project['id']}"), 404, "project_not_found")
 
 
+def test_project_can_plan_twice_with_reused_task_ids_and_read_both_versions(api_harness) -> None:
+    client, _, _, _ = api_harness
+    project = create_project(client)
+    first = plan_workflow(client, project["id"])
+    second = plan_workflow(client, project["id"])
+
+    assert second["version"] == 2
+    assert client.get(f"/api/projects/{project['id']}/workflow").json() == second
+    assert client.get(f"/api/workflows/{first['id']}").json() == first
+    assert client.get(f"/api/workflows/{second['id']}").json() == second
+
+
+def test_active_workflow_is_null_before_planning(api_harness) -> None:
+    client, _, _, _ = api_harness
+    project = create_project(client)
+
+    response = client.get(f"/api/projects/{project['id']}/workflow")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_active_workflow_rejects_missing_project(api_harness) -> None:
+    client, _, _, _ = api_harness
+
+    assert_error(client.get("/api/projects/missing/workflow"), 404, "project_not_found")
+
+
 def test_validation_errors_use_unified_envelope(api_harness) -> None:
     client, _, _, _ = api_harness
     error = assert_error(client.post("/api/projects", json={"name": ""}), 422, "validation_error")
     assert isinstance(error["details"], dict)
     assert isinstance(error["details"]["errors"], list)
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "payload", "secret"),
+    [
+        ("/api/security/initialize", "post", {"password": "master-secret-" + "x" * 1024}, "master-secret-"),
+        ("/api/nodes", "post", {"id": "node-secret-test", "kind": "local", "api_url": "http://node.test", "credential": "token-never-echo"}, "token-never-echo"),
+        ("/api/planner/config", "put", {"base_url": "https://planner.test/v1", "credential_key": "planner.primary", "credential": "api-key-never-echo"}, "api-key-never-echo"),
+    ],
+)
+def test_validation_errors_never_echo_secret_input(
+    api_harness,
+    path: str,
+    method: str,
+    payload: dict,
+    secret: str,
+) -> None:
+    client, _, _, _ = api_harness
+
+    response = getattr(client, method)(path, json=payload)
+
+    error = assert_error(response, 422, "validation_error")
+    assert secret not in response.text
+    assert all("input" not in detail for detail in error["details"]["errors"])
 
 
 def test_plan_edit_validate_review_and_freeze(api_harness) -> None:
@@ -269,6 +321,20 @@ def test_workflow_cycle_returns_structured_error(api_harness) -> None:
         "workflow_invalid",
     )
     assert "cycle" in str(error["details"]).lower()
+
+
+def test_workflow_validation_errors_never_echo_secret_prompt(api_harness) -> None:
+    client, _, _, _ = api_harness
+    project = create_project(client)
+    workflow = plan_workflow(client, project["id"])
+    secret = "prompt-secret-must-never-leak"
+    tasks = workflow["tasks"]
+    tasks[0]["prompt"] = secret
+    tasks[0]["dependencies"] = ["write"]
+    response = client.put(f"/api/workflows/{workflow['id']}", json={"tasks": tasks})
+    error = assert_error(response, 422, "workflow_invalid")
+    assert secret not in response.text
+    assert "input" not in str(error["details"])
 
 
 def test_run_requires_review_and_start_is_async_202(api_harness) -> None:
@@ -338,6 +404,7 @@ def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     client, _, _, _ = api_harness
     assert client.post("/api/security/initialize", json={"password": "correct horse battery staple"}).status_code == 201
     node = create_node(client)
+    assert node["credential_configured"] is True
     assert "credential" not in node
     assert "node-secret" not in str(node)
     assert client.get("/api/nodes").json() == [node]
@@ -354,8 +421,88 @@ def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     assert updated.status_code == 200
     assert updated.json()["name"] == "Renamed Node"
     assert "replacement-secret" not in updated.text
+    assert updated.json()["credential_configured"] is True
     assert client.delete("/api/nodes/node-1").status_code == 204
     assert_error(client.post("/api/nodes/node-1/diagnose"), 404, "node_not_found")
+
+
+def test_locked_vault_reports_node_credential_state_without_leaking_token(api_harness) -> None:
+    client, _, _, _ = api_harness
+    create_node(client)
+    assert client.post("/api/security/lock").status_code == 200
+
+    response = client.get("/api/nodes")
+
+    assert response.status_code == 200
+    assert response.json()[0]["credential_configured"] is None
+    assert "node-secret" not in response.text
+
+
+def test_locked_vault_rejects_node_deletion_without_removing_state(api_harness) -> None:
+    class ProtectedClient:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    client, app, _, _ = api_harness
+    create_node(client)
+    assert client.post("/api/security/lock").status_code == 200
+    protected_client = ProtectedClient()
+    app.state.services.node_clients["node-1"] = protected_client
+    app.state.services.execution.node_clients["node-1"] = protected_client
+
+    error = assert_error(client.delete("/api/nodes/node-1"), 423, "vault_locked")
+
+    assert error["details"] == {"node_id": "node-1"}
+    assert app.state.services.nodes.get("node-1") is not None
+    assert app.state.services.node_clients["node-1"] is protected_client
+    assert app.state.services.execution.node_clients["node-1"] is protected_client
+    assert protected_client.closed is False
+
+
+@pytest.mark.parametrize("node_id", [".", ".."])
+def test_node_id_rejects_dot_path_segments_without_persisting(api_harness, node_id: str) -> None:
+    client, app, _, _ = api_harness
+
+    response = client.post(
+        "/api/nodes",
+        json={
+            "id": node_id,
+            "name": "Unsafe Node",
+            "kind": "local",
+            "api_url": "http://node.test",
+        },
+    )
+
+    assert_error(response, 422, "validation_error")
+    assert app.state.services.nodes.get(node_id) is None
+    assert all(node["id"] != node_id for node in client.get("/api/nodes").json())
+
+
+def test_node_id_must_be_a_safe_path_segment(api_harness) -> None:
+    client, _, _, _ = api_harness
+    assert client.post(
+        "/api/security/initialize",
+        json={"password": "correct horse battery staple"},
+    ).status_code == 201
+
+    error = assert_error(
+        client.post(
+            "/api/nodes",
+            json={
+                "id": "team/node",
+                "name": "Unsafe Node",
+                "kind": "local",
+                "api_url": "http://node.test",
+                "credential": "node-secret",
+            },
+        ),
+        422,
+        "validation_error",
+    )
+    assert isinstance(error["details"]["errors"], list)
 
 
 def test_security_lifecycle_and_credentials_are_write_only(api_harness) -> None:
@@ -519,6 +666,14 @@ class RecordingNodeClient:
         self.closed = True
 
 
+class OfflineProvisioner(ProvisioningService):
+    def provision_remote(self, host, api_key: str = "", hermes_port: int = 8642) -> list[dict]:
+        return [
+            {"step": "ssh_connect", "success": True},
+            {"step": "verify_api_server", "online": False},
+        ]
+
+
 class RecordingProvisioner(ProvisioningService):
     def __init__(self) -> None:
         self.calls: list[tuple[Any, str, int]] = []
@@ -579,7 +734,7 @@ def test_node_client_lifecycle_restart_locked_diagnostic_and_remote_provision(tm
         assert provisioned.status_code == 200, provisioned.text
         assert provisioned.json() == {
             "node_id": "remote-1",
-            "completed": True,
+            "completed": False,
             "steps": [{"step": "ssh_connect", "success": True}],
         }
         assert provisioner.calls[-1][1:] == ("second-token", 9000)
