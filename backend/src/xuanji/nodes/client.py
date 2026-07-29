@@ -55,6 +55,18 @@ class NodeClient:
     def __repr__(self) -> str:
         return f"NodeClient(base_url={self._base_url!r})"
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    def rebinding(self, base_url: str) -> NodeClient:
+        """Return a client that talks to a different base URL with the same token.
+
+        Used for per-task SSH tunnel endpoints. Does not share the underlying
+        httpx client so tunnel and direct connections stay isolated.
+        """
+        return NodeClient(base_url, self._token, timeout=self._timeout)
+
     async def close(self) -> None:
         if self._client is not None:
             await self._client.aclose()

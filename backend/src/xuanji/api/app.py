@@ -16,10 +16,11 @@ from xuanji.artifacts.manager import ArtifactManager
 from xuanji.domain.enums import RunStatus
 from xuanji.domain.models import HermesNode
 from xuanji.execution import ExecutionManager, RecoveryService
-from xuanji.nodes import NodeClient
+from xuanji.nodes import NodeClient, SshTunnelProvider, TunnelProvider
 from xuanji.planner.providers import OpenAIChatCompletionsProvider
 from xuanji.planner.service import PlannerService
 from xuanji.provisioning import ProvisioningService
+from xuanji.provisioning.ssh import app_known_hosts_path, ensure_known_hosts_file
 from xuanji.security import CredentialVault, VaultLockedError
 from xuanji.storage.database import Database
 from xuanji.storage.repositories import (
@@ -59,6 +60,10 @@ class CoordinatorConfig:
     @property
     def vault_path(self) -> Path:
         return self.data_dir / "credentials.vault"
+
+    @property
+    def known_hosts_path(self) -> Path:
+        return app_known_hosts_path(self.data_dir)
 
 
 @dataclass
@@ -191,6 +196,7 @@ def create_coordinator_app(
     execution: ExecutionManager | None = None,
     recovery: RecoveryService | None = None,
     provisioning: ProvisioningService | None = None,
+    tunnels: TunnelProvider | None = None,
 ) -> FastAPI:
     build_planner = planner_factory or _default_planner_factory
     build_node_client = node_client_factory or (lambda base_url, token: NodeClient(base_url, token))
@@ -199,18 +205,32 @@ def create_coordinator_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         config.data_dir.mkdir(parents=True, exist_ok=True)
         config.projects_dir.mkdir(parents=True, exist_ok=True)
+        ensure_known_hosts_file(config.known_hosts_path)
         database = Database(config.db_path)
         database.migrate()
         vault = CredentialVault(config.vault_path)
         artifacts = ArtifactManager(config.projects_dir)
         clients = dict(node_clients or {})
+        tunnel_provider = tunnels or SshTunnelProvider(known_hosts_path=config.known_hosts_path)
         manager = execution or ExecutionManager(
             database,
             artifacts,
             clients,
             poll_interval=config.poll_interval,
+            tunnels=tunnel_provider,
         )
-        manager.node_clients = clients
+        if hasattr(manager, "node_clients"):
+            manager.node_clients = clients
+        if tunnels is not None and hasattr(manager, "tunnels"):
+            manager.tunnels = tunnels
+        elif (
+            execution is not None
+            and tunnels is None
+            and hasattr(manager, "tunnels")
+            and not isinstance(getattr(manager, "tunnels"), SshTunnelProvider)
+        ):
+            # Inject real SSH tunnels when a prebuilt ExecutionManager used the default Noop.
+            manager.tunnels = tunnel_provider
         recovery_service = recovery or RecoveryService(manager)
         projects = ProjectRepository(database)
         config_repository = ConfigRepository(database)
@@ -227,7 +247,8 @@ def create_coordinator_app(
             artifacts=artifacts,
             execution=manager,
             recovery=recovery_service,
-            provisioning=provisioning or ProvisioningService(),
+            provisioning=provisioning
+            or ProvisioningService(known_hosts_path=config.known_hosts_path),
             projects=projects,
             workflows=WorkflowRepository(database),
             runs=RunRepository(database),

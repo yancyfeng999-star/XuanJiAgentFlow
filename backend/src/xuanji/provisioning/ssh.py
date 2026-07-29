@@ -13,12 +13,32 @@ class SSHHost:
     key_path: str | None = None
 
 
+def app_known_hosts_path(data_dir: str | Path) -> Path:
+    """Application-scoped known_hosts path (never system ~/.ssh for tunnels/provisioning)."""
+    return Path(data_dir) / "ssh" / "known_hosts"
+
+
+def ensure_known_hosts_file(path: str | Path) -> Path:
+    """Create an empty known_hosts file if missing; parent dirs are created."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        target.touch()
+    return target
+
+
 class SSHRunner:
-    """Executes SSH commands for remote node provisioning."""
+    """Executes SSH commands for remote node provisioning.
+
+    Always uses StrictHostKeyChecking=yes with an explicit UserKnownHostsFile.
+    Never passes node tokens on argv — tokens (when needed) go via stdin only.
+    """
 
     def __init__(self, host: SSHHost, *, known_hosts_path: str | Path | None = None) -> None:
         self.host = host
-        self.known_hosts_path = Path(known_hosts_path or Path.home() / ".ssh" / "known_hosts")
+        self.known_hosts_path = ensure_known_hosts_file(
+            known_hosts_path or Path.home() / ".ssh" / "known_hosts"
+        )
 
     def _base_args(self) -> list[str]:
         args = [
@@ -123,8 +143,11 @@ def provisioning_succeeded(steps: list[dict]) -> bool:
 class ProvisioningService:
     """High-level provisioning workflow."""
 
+    def __init__(self, *, known_hosts_path: str | Path | None = None) -> None:
+        self.known_hosts_path = Path(known_hosts_path) if known_hosts_path else None
+
     def _create_runner(self, host: SSHHost) -> SSHRunner:
-        return SSHRunner(host)
+        return SSHRunner(host, known_hosts_path=self.known_hosts_path)
 
     def provision_remote(self, host: SSHHost, api_key: str = "", hermes_port: int = 8642) -> list[dict]:
         runner = self._create_runner(host)

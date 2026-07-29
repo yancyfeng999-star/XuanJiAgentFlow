@@ -15,6 +15,14 @@ from .protocol import (
     NodeTask,
 )
 from .registry import NodeRegistry, supports_group, supports_task
+from .tunnels import (
+    NoopTunnelProvider,
+    SshTunnelProvider,
+    TunnelEndpoint,
+    TunnelError,
+    TunnelHostKeyError,
+    TunnelProvider,
+)
 
 __all__ = [
     "NodeArtifact",
@@ -30,6 +38,12 @@ __all__ = [
     "NodeRegistry",
     "NodeTask",
     "NodeTimeoutError",
+    "NoopTunnelProvider",
+    "SshTunnelProvider",
+    "TunnelEndpoint",
+    "TunnelError",
+    "TunnelHostKeyError",
+    "TunnelProvider",
     "supports_group",
     "supports_task",
 ]

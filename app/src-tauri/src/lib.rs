@@ -1,4 +1,5 @@
 mod coordinator;
+mod tunnel;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,6 +11,7 @@ use coordinator::{
     new_shared_supervisor, production_start_options, resolve_sidecar_path, CoordinatorError,
     CoordinatorSupervisor, RuntimeInfo, SharedSupervisor,
 };
+use tunnel::{new_shared_tunnel_registry, SharedTunnelRegistry, TunnelRecord};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +41,16 @@ impl From<String> for CommandError {
 #[tauri::command]
 fn coordinator_status(supervisor: State<'_, SharedSupervisor>) -> RuntimeInfo {
     supervisor.status()
+}
+
+#[tauri::command]
+fn list_tunnels(tunnels: State<'_, SharedTunnelRegistry>) -> Vec<TunnelRecord> {
+    tunnels.list()
+}
+
+#[tauri::command]
+fn close_all_tunnels(tunnels: State<'_, SharedTunnelRegistry>) -> Vec<TunnelRecord> {
+    tunnels.close_all()
 }
 
 #[tauri::command]
@@ -155,10 +167,13 @@ pub fn run() {
     let supervisor = new_shared_supervisor();
     let supervisor_for_setup = Arc::clone(&supervisor);
     let supervisor_for_exit = Arc::clone(&supervisor);
+    let tunnels = new_shared_tunnel_registry();
+    let tunnels_for_exit = Arc::clone(&tunnels);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(supervisor)
+        .manage(tunnels)
         .setup(move |app| {
             bootstrap_coordinator(&app.handle(), supervisor_for_setup.as_ref());
             Ok(())
@@ -167,11 +182,15 @@ pub fn run() {
             coordinator_status,
             select_project_dir,
             select_ssh_key,
+            list_tunnels,
+            close_all_tunnels,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |_app_handle, event| {
             if let tauri::RunEvent::Exit = event {
+                // Orphan cleanup: terminate any tracked tunnel PIDs, then stop sidecar.
+                let _ = tunnels_for_exit.close_all();
                 let _ = supervisor_for_exit.stop();
             }
         });

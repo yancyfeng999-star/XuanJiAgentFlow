@@ -8,13 +8,16 @@ from typing import Mapping
 from xuanji.artifacts.manager import ArtifactManager, ArtifactVerificationError, UnsafePathError
 from xuanji.artifacts.manifest import ArtifactEntry, ArtifactManifest
 from xuanji.domain.enums import RunStatus, TaskStatus
-from xuanji.domain.models import Artifact, Run, Task, TaskAttempt, Workflow
+from xuanji.domain.models import Artifact, HermesNode, Run, Task, TaskAttempt, Workflow
 from xuanji.nodes import (
     NodeClient,
     NodeClientError,
     NodeConnectionError,
     NodeProtocolError,
     NodeTimeoutError,
+    NoopTunnelProvider,
+    TunnelError,
+    TunnelProvider,
 )
 from xuanji.scheduler import SchedulerService, ready_tasks, transition_run, transition_task
 from xuanji.storage.database import Database
@@ -32,6 +35,8 @@ _TERMINAL_TASKS = {TaskStatus.SUCCESS, TaskStatus.CANCELLED, TaskStatus.SKIPPED}
 _ACTIVE_TASKS = {TaskStatus.RUNNING, TaskStatus.DISPATCHING, TaskStatus.COLLECTING, TaskStatus.CANCELLING}
 _FAILURE_TASKS = {TaskStatus.FAILED, TaskStatus.ARTIFACT_FAILED, TaskStatus.DISPATCH_FAILED, TaskStatus.BLOCKED}
 _TRANSIENT_ERROR_CODES = {"node_connection_error", "node_timeout"}
+# Keep tunnel open while attempt may still talk to the remote node.
+_TUNNEL_OWNER_STATUSES = _ACTIVE_TASKS
 
 
 class ExecutionManager:
@@ -43,6 +48,7 @@ class ExecutionManager:
         scheduler: SchedulerService | None = None,
         *,
         poll_interval: float = 1.0,
+        tunnels: TunnelProvider | None = None,
     ) -> None:
         if poll_interval <= 0:
             raise ValueError("poll_interval must be positive")
@@ -51,6 +57,7 @@ class ExecutionManager:
         self.node_clients = dict(node_clients)
         self.scheduler = scheduler or SchedulerService()
         self.poll_interval = poll_interval
+        self.tunnels: TunnelProvider = tunnels or NoopTunnelProvider()
         self.runs = RunRepository(database)
         self.workflows = WorkflowRepository(database)
         self.projects = ProjectRepository(database)
@@ -60,6 +67,7 @@ class ExecutionManager:
         self._loops: dict[str, asyncio.Task[None]] = {}
         self._step_locks: dict[str, asyncio.Lock] = {}
         self._dispatch_lock = asyncio.Lock()
+        self._attempt_clients: dict[str, NodeClient] = {}
 
     async def start(self, run_id: str) -> None:
         async with self._step_lock(run_id):
@@ -108,6 +116,8 @@ class ExecutionManager:
         if loops:
             await asyncio.gather(*loops, return_exceptions=True)
         self._loops.clear()
+        self._attempt_clients.clear()
+        await self.tunnels.close_all()
 
     async def cancel(self, run_id: str) -> None:
         async with self._step_lock(run_id):
@@ -223,8 +233,9 @@ class ExecutionManager:
 
     async def _reconcile_attempt(self, run: Run, workflow: Workflow, attempt: TaskAttempt) -> None:
         try:
-            remote = await self._client(attempt.node_id).get_task(attempt.id)
-        except NodeClientError as error:
+            client = await self._client_for_attempt(attempt)
+            remote = await client.get_task(attempt.id)
+        except (NodeClientError, TunnelError) as error:
             if attempt.status is TaskStatus.CANCELLING:
                 self._record_cancel_error(attempt, error)
             else:
@@ -288,8 +299,9 @@ class ExecutionManager:
             self._set_attempt_status(attempt, TaskStatus.DISPATCHING)
         self.artifacts.create_task(workflow.project_id, run.id, task.id, task.prompt or task.description or task.title)
         try:
-            remote = await self._client(node.id).create_task(task.prompt or task.description or task.title, attempt.id)
-        except NodeClientError as error:
+            client = await self._client_for_attempt(attempt, node=node)
+            remote = await client.create_task(task.prompt or task.description or task.title, attempt.id)
+        except (NodeClientError, TunnelError) as error:
             self._block_attempt(attempt, error)
             return
         if remote.id != attempt.id:
@@ -301,7 +313,11 @@ class ExecutionManager:
         self._set_attempt_status(attempt, TaskStatus.RUNNING)
 
     async def _collect(self, run: Run, workflow: Workflow, task: Task, attempt: TaskAttempt) -> None:
-        client = self._client(attempt.node_id)
+        try:
+            client = await self._client_for_attempt(attempt)
+        except (NodeClientError, TunnelError) as error:
+            self._block_attempt(attempt, error)
+            return
         try:
             remote_manifest = await client.artifacts(attempt.id)
             expected = {output.path for output in task.expected_outputs}
@@ -360,11 +376,14 @@ class ExecutionManager:
             artifacts,
             self._event_payload(attempt, previous=previous.value),
         )
+        # SUCCESS path bypasses _set_attempt_status; still release owned tunnel.
+        asyncio.create_task(self._release_attempt_tunnel(attempt.id))
 
     async def _cancel_remote(self, attempt: TaskAttempt) -> None:
         try:
-            remote = await self._client(attempt.node_id).cancel_task(attempt.id)
-        except NodeClientError as error:
+            client = await self._client_for_attempt(attempt)
+            remote = await client.cancel_task(attempt.id)
+        except (NodeClientError, TunnelError) as error:
             self._record_cancel_error(attempt, error)
             return
         attempt.error = None
@@ -373,8 +392,13 @@ class ExecutionManager:
         else:
             self.runs.update_attempt(attempt)
 
-    def _record_cancel_error(self, attempt: TaskAttempt, error: NodeClientError) -> None:
-        attempt.error = {"code": "cancel_failed", "message": str(error)}
+    def _record_cancel_error(self, attempt: TaskAttempt, error: Exception) -> None:
+        if isinstance(error, TunnelError):
+            attempt.error = {"code": error.code, "message": str(error)}
+        elif isinstance(error, NodeClientError):
+            attempt.error = {"code": "cancel_failed", "message": str(error)}
+        else:
+            attempt.error = {"code": "cancel_failed", "message": str(error)}
         self.runs.update_attempt(attempt)
         self._event(attempt.run_id, "task.cancel_failed", attempt, error=attempt.error)
 
@@ -421,8 +445,13 @@ class ExecutionManager:
     def _is_transient(attempt: TaskAttempt) -> bool:
         return attempt.error is not None and attempt.error.get("code") in _TRANSIENT_ERROR_CODES
 
-    def _block_attempt(self, attempt: TaskAttempt, error: NodeClientError) -> None:
-        attempt.error = {"code": error.code, "message": str(error)}
+    def _block_attempt(self, attempt: TaskAttempt, error: Exception) -> None:
+        if isinstance(error, TunnelError):
+            attempt.error = {"code": error.code, "message": str(error), **error.extra}
+        elif isinstance(error, NodeClientError):
+            attempt.error = {"code": error.code, "message": str(error)}
+        else:
+            attempt.error = {"code": "node_connection_error", "message": str(error)}
         self._set_attempt_status(attempt, TaskStatus.BLOCKED)
 
     def _set_run_status(self, run: Run, status: RunStatus) -> None:
@@ -443,6 +472,9 @@ class ExecutionManager:
             attempt.completed_at = attempt.completed_at or datetime.now(timezone.utc)
         self.runs.update_attempt(attempt)
         self._event(attempt.run_id, "task.status_changed", attempt, previous=previous.value)
+        if previous in _TUNNEL_OWNER_STATUSES and status not in _TUNNEL_OWNER_STATUSES:
+            # Fire-and-forget close is unsafe under the step lock; schedule cleanup.
+            asyncio.create_task(self._release_attempt_tunnel(attempt.id))
 
     def _event(self, run_id: str, event_type: str, attempt: TaskAttempt, **extra: object) -> None:
         self.events.append(run_id, event_type, self._event_payload(attempt, **extra))
@@ -511,3 +543,37 @@ class ExecutionManager:
         if node_id is None or node_id not in self.node_clients:
             raise NodeProtocolError("node_protocol_error", "node client is unavailable")
         return self.node_clients[node_id]
+
+    async def _client_for_attempt(
+        self,
+        attempt: TaskAttempt,
+        *,
+        node: HermesNode | None = None,
+    ) -> NodeClient:
+        cached = self._attempt_clients.get(attempt.id)
+        if cached is not None:
+            return cached
+        if attempt.node_id is None and node is None:
+            raise NodeProtocolError("node_protocol_error", "node client is unavailable")
+        node_id = node.id if node is not None else attempt.node_id
+        base = self._client(node_id)
+        resolved = node or self.nodes.get(node_id or "")
+        if resolved is None:
+            # Fall back to the static registry client (local / tests without node row).
+            self._attempt_clients[attempt.id] = base
+            return base
+        try:
+            endpoint = await self.tunnels.open(attempt.id, resolved)
+        except TunnelError:
+            raise
+        client = base.rebinding(endpoint.base_url) if endpoint.base_url != base.base_url else base
+        self._attempt_clients[attempt.id] = client
+        return client
+
+    async def _release_attempt_tunnel(self, owner_id: str) -> None:
+        self._attempt_clients.pop(owner_id, None)
+        try:
+            await self.tunnels.close(owner_id)
+        except Exception:
+            # Best-effort cleanup; never surface tunnel teardown errors into task status.
+            return
