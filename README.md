@@ -24,7 +24,19 @@ DeepSeek / MiMo 规划任务 DAG → 单一无限画布审核与编排 → 本�
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | 排障 |
 | [`docs/HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md) | Hermes `/v1/runs` 集成 |
 
-签名、公证、DMG 与真实服务器安装标为**外部发布验收**。
+## 安装包（未签名 DMG）
+
+真实远程服务器不需要预先配进安装包：安装后在界面填写服务器、SSH 用户、私钥路径、Node Token 与 Planner Key。
+
+本机构建并已验证可挂载的 DMG 路径（隔离工作树）：
+
+```text
+app/src-tauri/target/release/bundle/dmg/璇玑_0.1.0_aarch64.dmg
+```
+
+安装：打开 DMG → 拖拽「璇玑.app」到 `Applications`。
+
+仍属外部发布验收：**Apple 签名 / 公证 / Staple**。未签名安装时 macOS 可能提示来自未识别开发者，需在系统设置中允许。
 
 ## 开发启动
 

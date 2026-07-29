@@ -53,15 +53,20 @@ E2E 使用 `scripts/e2e_stack.py` 启动 Coordinator + 2 个 FakeNode HTTP 服�
 
 ## 构建产物说明
 
-- 目标：未签名 macOS `.app`（签名、公证、DMG 为**外部发布验收**）。
-- Sidecar：`app/src-tauri/binaries/xuanji-coordinator*`  
-  - 仓库内默认提供 **开发包装脚本**（调用源码 `python -m xuanji`），便于本地 `tauri build`。  
-  - 正式发行应使用 PyInstaller 二进制替换（`backend/xuanji-coordinator.spec`）。
-- 实际路径与体积见本轮 `.superpowers/sdd/task-12-report.md`。
+- 未签名 macOS `.app` + **可安装 DMG** 已可本地构建：
+  - App: `app/src-tauri/target/release/bundle/macos/璇玑.app`
+  - DMG: `app/src-tauri/target/release/bundle/dmg/璇玑_0.1.0_aarch64.dmg`（约 23MB，含 `Applications` 快捷方式）
+- Sidecar：PyInstaller 单文件 `xuanji-coordinator`（Mach-O arm64）随应用打包，不依赖系统 Python。
+- 远端服务器 / SSH 用户 / 私钥路径 / Node Token / Planner Key：**软件界面填写**，不写死进安装包。
+- 重新打包建议流程：
+  1. `backend/.venv/bin/pyinstaller --noconfirm --clean backend/xuanji-coordinator.spec`
+  2. 复制 `dist/xuanji-coordinator` 到 `app/src-tauri/binaries/`
+  3. `cd app && npm run build:tauri`
+  4. 若 Tauri `bundle_dmg.sh` 失败，用 `hdiutil` 从 `.app` 生成 UDZO DMG
 
 ## 外部验收 / 未在本仓库门禁内声明完成
 
-- Apple 代码签名、公证、Staple、可分发 DMG
+- Apple 代码签名、公证、Staple
 - 真实 Ubuntu/Debian 服务器上的 Hermes 安装与长时间压测
 - 真实 DeepSeek/MiMo/Hermes 云服务配额与账号
 - 首次未知主机指纹「用户确认写入 known_hosts」完整 UI 流程
