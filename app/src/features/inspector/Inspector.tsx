@@ -1,24 +1,69 @@
-import { Bot, Clock3, FileOutput, RotateCcw } from 'lucide-react';
+import { Bot, Clock3, FileOutput, RotateCcw, Server } from 'lucide-react';
 
+import ArtifactBrowser from '../artifacts/ArtifactBrowser';
+import TaskLog from '../runs/TaskLog';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import TaskEditor from './TaskEditor';
 
 export default function Inspector() {
   const task = useWorkspaceStore((state) => state.workflow?.tasks.find((item) => item.id === state.selectedTaskId));
+  const run = useWorkspaceStore((state) => state.run);
+  const attempt = useWorkspaceStore((state) => (
+    state.selectedTaskId ? state.taskAttempts[state.selectedTaskId] ?? null : null
+  ));
+  const nodes = useWorkspaceStore((state) => state.hermesNodes);
+  const nodeName = attempt?.node_id
+    ? nodes.find((node) => node.id === attempt.node_id)?.name ?? attempt.node_id
+    : '未分配';
 
   return (
     <aside className="inspector" aria-label="节点检查器">
-      {!task ? <div className="inspector-empty"><Bot size={28} /><h2>节点检查器</h2><p>选择画布中的任务，查看并编辑任务定义、调度约束和产出。</p></div> : <>
-        <div className="inspector-head"><span>{task.agent_type}</span><h2>{task.title}</h2><p>{task.description}</p></div>
-        <TaskEditor task={task} />
-        <section className="detail-grid">
-          <div><Bot size={15} /><span>Agent 类型</span><b>{task.agent_type}</b></div>
-          <div><Clock3 size={15} /><span>超时</span><b>{task.execution_policy.timeout_seconds}s</b></div>
-          <div><RotateCcw size={15} /><span>最大尝试</span><b>{task.retry_policy.max_attempts}</b></div>
-          <div><FileOutput size={15} /><span>预期产出</span><b>{task.expected_outputs.length}</b></div>
-        </section>
-        <section><label>调度约束</label><p className="constraint">{task.execution_policy.mode} · {task.execution_policy.required_tags.join(', ') || '无标签限制'}</p></section>
-      </>}
+      {!task ? (
+        <div className="inspector-empty">
+          <Bot size={28} />
+          <h2>节点检查器</h2>
+          <p>选择画布中的任务，查看并编辑任务定义、调度约束和产出。</p>
+        </div>
+      ) : (
+        <>
+          <div className="inspector-head">
+            <span>{task.agent_type}</span>
+            <h2>{task.title}</h2>
+            <p>{task.description}</p>
+          </div>
+          <TaskEditor task={task} />
+          <section className="detail-grid">
+            <div><Bot size={15} /><span>Agent 类型</span><b>{task.agent_type}</b></div>
+            <div><Clock3 size={15} /><span>超时</span><b>{task.execution_policy.timeout_seconds}s</b></div>
+            <div><RotateCcw size={15} /><span>最大尝试</span><b>{task.retry_policy.max_attempts}</b></div>
+            <div><FileOutput size={15} /><span>预期产出</span><b>{task.expected_outputs.length}</b></div>
+          </section>
+          <section>
+            <label>调度约束</label>
+            <p className="constraint">
+              {task.execution_policy.mode} · {task.execution_policy.required_tags.join(', ') || '无标签限制'}
+            </p>
+          </section>
+          {run && (
+            <section className="execution-panel" aria-label="执行详情">
+              <label>执行状态</label>
+              <div className="execution-meta">
+                <div><Server size={14} /><span>执行节点</span><b>{nodeName}</b></div>
+                <div><RotateCcw size={14} /><span>Attempt</span><b>{attempt?.attempt ?? '-'}</b></div>
+                <div><span>状态</span><b>{attempt?.status ?? 'pending'}</b></div>
+              </div>
+              {attempt?.error && (
+                <div className="inline-error" role="alert">
+                  <strong>{String(attempt.error.code ?? 'task_error')}</strong>
+                  <span>{String(attempt.error.message ?? JSON.stringify(attempt.error))}</span>
+                </div>
+              )}
+              <TaskLog runId={run.id} taskId={task.id} />
+              <ArtifactBrowser runId={run.id} taskId={task.id} />
+            </section>
+          )}
+        </>
+      )}
     </aside>
   );
 }

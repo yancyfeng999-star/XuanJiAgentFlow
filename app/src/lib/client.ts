@@ -70,6 +70,19 @@ export interface PlanInput {
   constraints?: Record<string, unknown>;
 }
 
+export interface TaskAttempt {
+  id: string;
+  run_id: string;
+  task_id: string;
+  node_id: string | null;
+  attempt: number;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error: Record<string, unknown> | null;
+  result_manifest: Record<string, unknown> | null;
+}
+
 export interface Run {
   id: string;
   workflow_id: string;
@@ -77,7 +90,25 @@ export interface Run {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
-  attempts: unknown[];
+  attempts: TaskAttempt[];
+}
+
+export interface Artifact {
+  id: string;
+  run_id: string;
+  task_id: string;
+  attempt_id: string | null;
+  relative_path: string;
+  media_type: string;
+  size: number;
+  sha256: string;
+  created_at: string;
+}
+
+export interface LogPage {
+  offset: number;
+  next_offset: number;
+  events: Record<string, unknown>[];
 }
 
 export interface HermesNode {
@@ -181,6 +212,14 @@ export interface CoordinatorClient {
   reviewWorkflow(workflowId: string): Promise<Workflow>;
   createRun(workflowId: string): Promise<Run>;
   startRun(runId: string): Promise<{ id: string; status: 'accepted' }>;
+  getRun(runId: string): Promise<Run>;
+  pauseRun(runId: string): Promise<Run>;
+  resumeRun(runId: string): Promise<Run>;
+  cancelRun(runId: string): Promise<Run>;
+  retryTask(runId: string, taskId: string): Promise<TaskAttempt>;
+  skipTask(runId: string, taskId: string): Promise<Run>;
+  listArtifacts(runId: string): Promise<{ artifacts: Artifact[] }>;
+  listTaskLogs(runId: string, taskId: string, offset?: number): Promise<LogPage>;
   listNodes(): Promise<HermesNode[]>;
   createNode(input: NodeInput): Promise<HermesNode>;
   updateNode(nodeId: string, input: NodeUpdate): Promise<HermesNode>;
@@ -252,6 +291,15 @@ export function createApiClient(baseUrl: string): CoordinatorClient {
     reviewWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}/review`, json('POST')),
     createRun: (workflowId) => request(`/api/workflows/${id(workflowId)}/runs`, json('POST')),
     startRun: (runId) => request(`/api/runs/${id(runId)}/start`, json('POST')),
+    getRun: (runId) => request(`/api/runs/${id(runId)}`),
+    pauseRun: (runId) => request(`/api/runs/${id(runId)}/pause`, json('POST')),
+    resumeRun: (runId) => request(`/api/runs/${id(runId)}/resume`, json('POST')),
+    cancelRun: (runId) => request(`/api/runs/${id(runId)}/cancel`, json('POST')),
+    retryTask: (runId, taskId) => request(`/api/runs/${id(runId)}/tasks/${id(taskId)}/retry`, json('POST')),
+    skipTask: (runId, taskId) => request(`/api/runs/${id(runId)}/tasks/${id(taskId)}/skip`, json('POST')),
+    listArtifacts: (runId) => request(`/api/runs/${id(runId)}/artifacts`),
+    listTaskLogs: (runId, taskId, offset = 0) =>
+      request(`/api/runs/${id(runId)}/tasks/${id(taskId)}/logs?offset=${encodeURIComponent(String(offset))}`),
     listNodes: () => request('/api/nodes'),
     createNode: (input) => request('/api/nodes', json('POST', input)),
     updateNode: (nodeId, input) => request(`/api/nodes/${id(nodeId)}`, json('PATCH', nodeUpdatePayload(input))),

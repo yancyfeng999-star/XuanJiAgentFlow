@@ -14,6 +14,7 @@ import {
   type Project,
   type Run,
   type SecurityStatus,
+  type TaskAttempt,
   type Workflow,
   type WorkflowTask,
 } from '../lib/client';
@@ -25,9 +26,17 @@ export interface WorkspaceError {
 }
 
 export type WorkspacePanel = 'workflow' | 'nodes' | 'settings';
-export type RunStatus = 'idle' | 'accepted' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+export type RunStatus = 'idle' | 'accepted' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'pending' | 'success' | 'cancelling';
 
 type TaskChanges = Partial<Omit<WorkflowTask, 'id' | 'workflow_id' | 'dependencies'>>;
+
+export interface MonitorUpdate {
+  lastEventId?: number;
+  runStatus?: string;
+  runProgress?: number;
+  taskAttempts?: Record<string, TaskAttempt>;
+  run?: Run | null;
+}
 
 export interface WorkspaceState {
   coordinatorBaseUrl: string;
@@ -37,6 +46,8 @@ export interface WorkspaceState {
   run: Run | null;
   runStatus: RunStatus;
   runProgress: number;
+  lastEventId: number;
+  taskAttempts: Record<string, TaskAttempt>;
   hermesNodes: HermesNode[];
   selectedTaskId: string | null;
   activePanel: WorkspacePanel;
@@ -50,6 +61,8 @@ export interface WorkspaceState {
   setActivePanel: (panel: WorkspacePanel) => void;
   setRunStatus: (status: RunStatus) => void;
   setRunProgress: (progress: number) => void;
+  applyRunMonitor: (update: MonitorUpdate) => void;
+  setControlError: (error: WorkspaceError | null) => void;
   clearError: () => void;
   loadProjects: () => Promise<void>;
   createProject: (name: string, rootPath?: string) => Promise<void>;
@@ -63,6 +76,12 @@ export interface WorkspaceState {
   disconnectTaskEdges: (edges: Array<{ source: string; target: string }>) => Promise<void>;
   reviewWorkflow: () => Promise<void>;
   executeWorkflow: () => Promise<void>;
+  pauseRun: () => Promise<void>;
+  resumeRun: () => Promise<void>;
+  cancelRun: () => Promise<void>;
+  retryTask: (taskId: string) => Promise<void>;
+  skipTask: (taskId: string) => Promise<void>;
+  refreshRun: () => Promise<void>;
   loadNodes: () => Promise<void>;
   saveNode: (input: NodeInput) => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
@@ -90,6 +109,8 @@ const initialState = {
   run: null as Run | null,
   runStatus: 'idle' as RunStatus,
   runProgress: 0,
+  lastEventId: 0,
+  taskAttempts: {} as Record<string, TaskAttempt>,
   hermesNodes: [] as HermesNode[],
   selectedTaskId: null as string | null,
   activePanel: 'workflow' as WorkspacePanel,
@@ -99,6 +120,38 @@ const initialState = {
   error: null as WorkspaceError | null,
   canExecute: false,
 };
+
+function toRunStatus(status: string | undefined | null): RunStatus {
+  switch (status) {
+    case 'pending':
+      return 'accepted';
+    case 'success':
+      return 'completed';
+    case 'cancelling':
+      return 'cancelled';
+    case 'blocked':
+      return 'failed';
+    case 'accepted':
+    case 'running':
+    case 'paused':
+    case 'completed':
+    case 'failed':
+    case 'cancelled':
+    case 'idle':
+      return status;
+    default:
+      return (status as RunStatus) || 'idle';
+  }
+}
+
+function attemptsByTask(attempts: TaskAttempt[]): Record<string, TaskAttempt> {
+  const latest: Record<string, TaskAttempt> = {};
+  for (const attempt of attempts) {
+    const previous = latest[attempt.task_id];
+    if (!previous || attempt.attempt >= previous.attempt) latest[attempt.task_id] = attempt;
+  }
+  return latest;
+}
 
 function workspaceError(error: unknown): WorkspaceError {
   if (error instanceof CoordinatorError) {
@@ -139,6 +192,10 @@ let workspaceClient: CoordinatorClient = createApiClient(initialState.coordinato
 
 export function setWorkspaceClient(client: CoordinatorClient): void {
   workspaceClient = client;
+}
+
+export function getWorkspaceClient(): CoordinatorClient {
+  return workspaceClient;
 }
 
 export function createWorkspaceStore(getClient: () => CoordinatorClient = () => workspaceClient) {
@@ -207,6 +264,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           project: null,
           workflow: null,
           run: null,
+          lastEventId: 0,
+          taskAttempts: {},
+          runStatus: 'idle',
+          runProgress: 0,
           hermesNodes: [],
           selectedTaskId: null,
           plannerConfig: { ...emptyPlannerConfig },
@@ -220,6 +281,18 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       setActivePanel: (activePanel) => set({ activePanel }),
       setRunStatus: (runStatus) => set({ runStatus }),
       setRunProgress: (runProgress) => set({ runProgress: Math.max(0, Math.min(100, runProgress)) }),
+      applyRunMonitor: (update) => set((state) => ({
+        lastEventId: update.lastEventId ?? state.lastEventId,
+        runStatus: update.runStatus ? toRunStatus(update.runStatus) : state.runStatus,
+        runProgress: update.runProgress === undefined
+          ? state.runProgress
+          : Math.max(0, Math.min(100, update.runProgress)),
+        taskAttempts: update.taskAttempts
+          ? { ...state.taskAttempts, ...update.taskAttempts }
+          : state.taskAttempts,
+        run: update.run === undefined ? state.run : update.run,
+      })),
+      setControlError: (error) => set({ error }),
       clearError: () => set({ error: null }),
       loadProjects: async () => {
         const client = getClient();
@@ -253,7 +326,18 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const request = ++workspaceRequest;
         const selection = ++selectionGeneration;
         workflowRequest += 1;
-        set({ loading: true, error: null, selectedTaskId: null, workflow: null, run: null, canExecute: false });
+        set({
+          loading: true,
+          error: null,
+          selectedTaskId: null,
+          workflow: null,
+          run: null,
+          lastEventId: 0,
+          taskAttempts: {},
+          runStatus: 'idle',
+          runProgress: 0,
+          canExecute: false,
+        });
         try {
           const [project, workflow] = await Promise.all([
             client.getProject(projectId),
@@ -406,10 +490,135 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (!currentSelection(workspace, selection, projectId, workflow.id) || request !== workflowRequest) return;
           await client.startRun(run.id);
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) {
-            set({ run: { ...run, status: 'accepted' }, loading: false });
+            set({
+              run: { ...run, status: 'accepted' },
+              runStatus: 'accepted',
+              runProgress: 0,
+              lastEventId: 0,
+              taskAttempts: attemptsByTask(run.attempts ?? []),
+              loading: false,
+            });
           }
         } catch (error) {
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) fail(error);
+        }
+      },
+      pauseRun: async () => {
+        const client = getClient();
+        const runId = get().run?.id;
+        if (!runId) return;
+        set({ loading: true, error: null });
+        try {
+          const updated = await client.pauseRun(runId);
+          if (get().run?.id === runId) {
+            set({
+              run: updated,
+              runStatus: toRunStatus(updated.status),
+              taskAttempts: attemptsByTask(updated.attempts ?? []),
+              loading: false,
+            });
+          }
+        } catch (error) {
+          if (get().run?.id === runId) fail(error);
+        }
+      },
+      resumeRun: async () => {
+        const client = getClient();
+        const runId = get().run?.id;
+        if (!runId) return;
+        set({ loading: true, error: null });
+        try {
+          const updated = await client.resumeRun(runId);
+          if (get().run?.id === runId) {
+            set({
+              run: updated,
+              runStatus: toRunStatus(updated.status),
+              taskAttempts: attemptsByTask(updated.attempts ?? []),
+              loading: false,
+            });
+          }
+        } catch (error) {
+          if (get().run?.id === runId) fail(error);
+        }
+      },
+      cancelRun: async () => {
+        const client = getClient();
+        const runId = get().run?.id;
+        if (!runId) return;
+        set({ loading: true, error: null });
+        try {
+          const updated = await client.cancelRun(runId);
+          if (get().run?.id === runId) {
+            set({
+              run: updated,
+              runStatus: toRunStatus(updated.status),
+              taskAttempts: attemptsByTask(updated.attempts ?? []),
+              loading: false,
+            });
+          }
+        } catch (error) {
+          if (get().run?.id === runId) fail(error);
+        }
+      },
+      retryTask: async (taskId) => {
+        const client = getClient();
+        const runId = get().run?.id;
+        if (!runId) return;
+        set({ loading: true, error: null });
+        try {
+          const attempt = await client.retryTask(runId, taskId);
+          if (get().run?.id === runId) {
+            set((state) => ({
+              taskAttempts: { ...state.taskAttempts, [taskId]: attempt },
+              loading: false,
+            }));
+            const refreshed = await client.getRun(runId);
+            if (get().run?.id === runId) {
+              set({
+                run: refreshed,
+                runStatus: toRunStatus(refreshed.status),
+                taskAttempts: attemptsByTask(refreshed.attempts ?? []),
+              });
+            }
+          }
+        } catch (error) {
+          if (get().run?.id === runId) fail(error);
+        }
+      },
+      skipTask: async (taskId) => {
+        const client = getClient();
+        const runId = get().run?.id;
+        if (!runId) return;
+        set({ loading: true, error: null });
+        try {
+          const updated = await client.skipTask(runId, taskId);
+          if (get().run?.id === runId) {
+            set({
+              run: updated,
+              runStatus: toRunStatus(updated.status),
+              taskAttempts: attemptsByTask(updated.attempts ?? []),
+              loading: false,
+            });
+          }
+        } catch (error) {
+          if (get().run?.id === runId) fail(error);
+        }
+      },
+      refreshRun: async () => {
+        const client = getClient();
+        const runId = get().run?.id;
+        if (!runId) return;
+        try {
+          const updated = await client.getRun(runId);
+          if (get().run?.id === runId) {
+            set({
+              run: updated,
+              runStatus: toRunStatus(updated.status),
+              taskAttempts: attemptsByTask(updated.attempts ?? []),
+            });
+          }
+        } catch (error) {
+          if (get().run?.id === runId) fail(error);
         }
       },
       loadNodes: async () => {

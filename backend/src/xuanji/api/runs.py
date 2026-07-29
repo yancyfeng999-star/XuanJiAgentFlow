@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import uuid
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 
 from xuanji.domain.enums import WorkflowStatus
 from xuanji.domain.models import Run
@@ -30,6 +31,13 @@ def _run_payload(request: Request, run: Run) -> dict:
         for attempt in _services(request).runs.list_attempts(run.id)
     ]
     return payload
+
+
+def _workflow_for_run(request: Request, run: Run):
+    workflow = _services(request).workflows.get(run.workflow_id)
+    if workflow is None:
+        raise APIError(404, "workflow_not_found", "workflow not found")
+    return workflow
 
 
 @router.post("/api/workflows/{workflow_id}/runs", status_code=status.HTTP_201_CREATED)
@@ -107,3 +115,41 @@ async def skip_task(run_id: str, task_id: str, request: Request) -> dict:
     except ValueError as error:
         raise APIError(409, "task_not_skippable", str(error)) from None
     return _run_payload(request, _run(request, run_id))
+
+
+@router.get("/api/runs/{run_id}/tasks/{task_id}/logs")
+async def list_task_logs(
+    run_id: str,
+    task_id: str,
+    request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    run = _run(request, run_id)
+    workflow = _workflow_for_run(request, run)
+    if not any(task.id == task_id for task in workflow.tasks):
+        raise APIError(404, "task_not_found", "task not found", {"task_id": task_id})
+    services = _services(request)
+    log_path = services.artifacts.resolve_project_path(
+        workflow.project_id,
+        f"runs/{run_id}/tasks/{task_id}/logs.jsonl",
+    )
+    events: list[dict] = []
+    if log_path.is_file():
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        page = lines[offset : offset + limit]
+        for line in page:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                events.append({"message": text})
+                continue
+            if isinstance(parsed, dict):
+                events.append(parsed)
+            else:
+                events.append({"message": text})
+    next_offset = offset + len(events)
+    return {"offset": offset, "next_offset": next_offset, "events": events}
