@@ -267,30 +267,35 @@ impl CoordinatorSupervisor {
             .stdout
             .take()
             .ok_or_else(|| CoordinatorError::Spawn("missing stdout".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| CoordinatorError::Spawn("missing stderr".into()))?;
 
-        let port = match wait_for_port_line(stdout, &mut child, options.port_timeout) {
+        // Drain BOTH pipes for the full process lifetime.
+        // Stopping after the port line closes the pipe and kills uvicorn
+        // (BrokenPipe on later status/log writes) — that is the production failure mode.
+        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let stderr_for_reader = Arc::clone(&stderr_tail);
+        thread::spawn(move || {
+            drain_pipe_lines(stderr, Some(stderr_for_reader), 8 * 1024);
+        });
+
+        let port = match wait_for_port_line_and_drain(stdout, &mut child, options.port_timeout) {
             Ok(port) => port,
             Err(err) => {
+                let detail = pipe_tail(&stderr_tail);
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(err);
+                return Err(enrich_process_error(err, detail));
             }
         };
 
         if let Err(err) = wait_for_health(&options.host, port, options.health_timeout) {
+            let detail = pipe_tail(&stderr_tail);
             let _ = child.kill();
             let _ = child.wait();
-            return Err(err);
-        }
-
-        // Keep draining stderr in background so the pipe does not block.
-        if let Some(stderr) = child.stderr.take() {
-            thread::spawn(move || {
-                let reader = BufReader::new(stderr);
-                for _line in reader.lines() {
-                    // Intentionally discarded in production; tests inspect processes directly.
-                }
-            });
+            return Err(enrich_process_error(err, detail));
         }
 
         Ok((child, port))
@@ -341,31 +346,41 @@ pub fn find_free_port() -> Result<u16, CoordinatorError> {
     Ok(port)
 }
 
-fn wait_for_port_line<R: std::io::Read + Send + 'static>(
+/// Keep reading stdout until EOF so the child never blocks or gets SIGPIPE.
+/// Signal the first `XUANJI_PORT=` line through the channel, then keep draining.
+fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
     stdout: R,
     child: &mut Child,
     timeout: Duration,
 ) -> Result<u16, CoordinatorError> {
-    let reader = BufReader::new(stdout);
     let deadline = Instant::now() + timeout;
     let (tx, rx) = std::sync::mpsc::channel::<Result<u16, String>>();
 
     thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut reported_port = false;
         for line in reader.lines() {
             match line {
                 Ok(text) => {
-                    if let Some(port) = parse_port_line(&text) {
-                        let _ = tx.send(Ok(port));
-                        return;
+                    if !reported_port {
+                        if let Some(port) = parse_port_line(&text) {
+                            reported_port = true;
+                            let _ = tx.send(Ok(port));
+                        }
                     }
+                    // Continue draining subsequent lines (status, access logs, …).
                 }
                 Err(err) => {
-                    let _ = tx.send(Err(err.to_string()));
+                    if !reported_port {
+                        let _ = tx.send(Err(err.to_string()));
+                    }
                     return;
                 }
             }
         }
-        let _ = tx.send(Err("stdout closed before XUANJI_PORT".into()));
+        if !reported_port {
+            let _ = tx.send(Err("stdout closed before XUANJI_PORT".into()));
+        }
     });
 
     loop {
@@ -396,6 +411,61 @@ fn wait_for_port_line<R: std::io::Read + Send + 'static>(
                 ));
             }
         }
+    }
+}
+
+fn drain_pipe_lines<R: std::io::Read>(
+    stream: R,
+    tail: Option<Arc<Mutex<String>>>,
+    max_tail: usize,
+) {
+    let reader = BufReader::new(stream);
+    for line in reader.lines() {
+        match line {
+            Ok(text) => {
+                if let Some(store) = &tail {
+                    if let Ok(mut guard) = store.lock() {
+                        if guard.len() + text.len() + 1 > max_tail {
+                            let overflow = guard.len() + text.len() + 1 - max_tail;
+                            if overflow < guard.len() {
+                                guard.drain(..overflow);
+                            } else {
+                                guard.clear();
+                            }
+                        }
+                        if !guard.is_empty() {
+                            guard.push('\n');
+                        }
+                        guard.push_str(&text);
+                    }
+                }
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+fn pipe_tail(tail: &Arc<Mutex<String>>) -> String {
+    tail.lock()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
+
+fn enrich_process_error(err: CoordinatorError, detail: String) -> CoordinatorError {
+    if detail.trim().is_empty() {
+        return err;
+    }
+    match err {
+        CoordinatorError::EarlyExit(msg) => {
+            CoordinatorError::EarlyExit(format!("{msg}; stderr={detail}"))
+        }
+        CoordinatorError::HealthTimeout => {
+            CoordinatorError::HealthFailed(format!("timed out waiting for coordinator health; stderr={detail}"))
+        }
+        CoordinatorError::PortTimeout => {
+            CoordinatorError::EarlyExit(format!("timed out waiting for coordinator port; stderr={detail}"))
+        }
+        other => other,
     }
 }
 
@@ -630,6 +700,67 @@ time.sleep(60)
     }
 
     #[test]
+    fn start_succeeds_when_child_keeps_writing_stdout_after_port() {
+        // Regression: supervisor used to drop the stdout reader after the first
+        // XUANJI_PORT line, which SIGPIPEs real uvicorn when it prints more lines.
+        let dir = tempfile_dir("stdout-after-port");
+        let binary = write_fake_binary(
+            &dir,
+            "chatty-coordinator",
+            r#"#!/usr/bin/env python3
+import socket
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
+    def log_message(self, *args):
+        pass
+
+host = "127.0.0.1"
+httpd = HTTPServer((host, 0), H)
+port = httpd.server_address[1]
+print(f"XUANJI_PORT={port}", flush=True)
+# Subsequent stdout/stderr must not kill the supervisor handshake.
+print(f"XUANJI_DATA_DIR=/tmp/chatty", flush=True)
+print(f"XUANJI_STATUS=starting host={host} port={port}", flush=True)
+print("INFO: chatter before serve", flush=True)
+sys.stderr.write("INFO: stderr chatter before serve\n")
+sys.stderr.flush()
+time.sleep(0.15)
+print("INFO: still writing stdout", flush=True)
+t = threading.Thread(target=httpd.serve_forever, daemon=True)
+t.start()
+try:
+    while True:
+        print("INFO: heartbeat", flush=True)
+        threading.Event().wait(0.2)
+except KeyboardInterrupt:
+    pass
+"#,
+        );
+
+        let supervisor = CoordinatorSupervisor::new();
+        let info = supervisor
+            .start(StartOptions {
+                binary,
+                data_dir: dir,
+                allow_any_binary: true,
+                health_timeout: Duration::from_secs(5),
+                port_timeout: Duration::from_secs(5),
+                ..StartOptions::default()
+            })
+            .expect("chatty start ok");
+        assert_eq!(info.status, RuntimeStatus::Healthy);
+        let _ = supervisor.stop();
+    }
+
+    #[test]
     fn start_success_and_duplicate_and_stop() {
         let dir = tempfile_dir("success");
         let binary = write_fake_binary(
@@ -653,6 +784,7 @@ host = "127.0.0.1"
 httpd = HTTPServer((host, 0), H)
 port = httpd.server_address[1]
 print(f"XUANJI_PORT={port}", flush=True)
+print(f"XUANJI_STATUS=starting", flush=True)
 t = threading.Thread(target=httpd.serve_forever, daemon=True)
 t.start()
 try:

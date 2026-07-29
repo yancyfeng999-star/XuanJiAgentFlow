@@ -49,21 +49,30 @@ def main(argv: list[str] | None = None) -> None:
     data_dir = args.data_dir.expanduser().resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Parent supervisor parses this exact line.
-    print(f"XUANJI_PORT={port}", flush=True)
-    print(f"XUANJI_DATA_DIR={data_dir}", flush=True)
+    # Parent supervisor parses this exact line. Extra stdout after the port is
+    # normal; the supervisor must keep the pipe open, but we still avoid crashing
+    # if a parent process dropped the reader (BrokenPipe).
+    def emit(message: str, *, stream=sys.stdout) -> None:
+        try:
+            print(message, flush=True, file=stream)
+        except BrokenPipeError:
+            pass
+
+    emit(f"XUANJI_PORT={port}")
+    emit(f"XUANJI_DATA_DIR={data_dir}")
 
     try:
         import uvicorn
     except ImportError as exc:  # pragma: no cover - packaging concern
-        print(f"XUANJI_ERROR=uvicorn_missing:{exc}", flush=True, file=sys.stderr)
+        emit(f"XUANJI_ERROR=uvicorn_missing:{exc}", stream=sys.stderr)
         raise SystemExit(2) from exc
 
     from xuanji.api.app import CoordinatorConfig, create_coordinator_app
 
     app = create_coordinator_app(CoordinatorConfig(data_dir=data_dir))
-    print(f"XUANJI_STATUS=starting host={host} port={port}", flush=True)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    emit(f"XUANJI_STATUS=starting host={host} port={port}")
+    # Prefer quieter access logs in packaged mode — still works if parent drains.
+    uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
