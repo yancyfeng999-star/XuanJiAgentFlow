@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from xuanji.domain.enums import RunStatus
+from xuanji.domain.enums import RunStatus, TaskStatus
 from xuanji.domain.models import Artifact, HermesNode, Project, Run, Task, TaskAttempt, Workflow
 
 from .database import Database
@@ -17,6 +17,25 @@ def _json(value: Any) -> str:
 
 def _dump(model: Any) -> dict[str, Any]:
     return model.model_dump(mode="json")
+
+
+class ConfigRepository:
+    def __init__(self, database: Database):
+        self.database = database
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        row = self.database.connection.execute(
+            "SELECT value_json FROM app_config WHERE key=?", (key,)
+        ).fetchone()
+        return json.loads(row["value_json"]) if row else None
+
+    def set(self, key: str, value: dict[str, Any]) -> None:
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO app_config(key,value_json,updated_at) VALUES (?,?,?)
+                ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at""",
+                (key, _json(value), datetime.now(timezone.utc).isoformat()),
+            )
 
 
 class ProjectRepository:
@@ -49,6 +68,11 @@ class ProjectRepository:
     def list(self) -> list[Project]:
         rows = self.database.connection.execute("SELECT * FROM projects ORDER BY created_at,id").fetchall()
         return [Project.model_validate(dict(row)) for row in rows]
+
+    def delete(self, project_id: str) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute("DELETE FROM projects WHERE id=?", (project_id,))
+        return cursor.rowcount == 1
 
 
 class WorkflowRepository:
@@ -92,6 +116,42 @@ class WorkflowRepository:
             "SELECT * FROM workflows WHERE project_id=? ORDER BY version", (project_id,)
         ).fetchall()
         return [self._restore(row) for row in rows]
+
+    def get_active(self, project_id: str) -> Workflow | None:
+        row = self.database.connection.execute(
+            """SELECT workflows.* FROM workflows
+            JOIN projects ON projects.id=workflows.project_id
+            WHERE workflows.project_id=? AND workflows.version=projects.active_workflow_version""",
+            (project_id,),
+        ).fetchone()
+        return self._restore(row) if row else None
+
+    def update(self, workflow: Workflow) -> None:
+        data = _dump(workflow)
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE workflows SET goal=?,planner_provider=?,planner_model=?,status=?,graph_json=? WHERE id=?",
+                (
+                    data["goal"], data["planner_provider"], data["planner_model"],
+                    data["status"], _json(data["graph_json"]), data["id"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(workflow.id)
+            connection.execute("DELETE FROM tasks WHERE workflow_id=?", (workflow.id,))
+            for task in workflow.tasks:
+                task_data = _dump(task)
+                connection.execute(
+                    """INSERT INTO tasks(id,workflow_id,title,description,prompt,agent_type,dependencies_json,
+                    execution_policy_json,retry_policy_json,expected_outputs_json,ui_position_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        task_data["id"], task_data["workflow_id"], task_data["title"], task_data["description"],
+                        task_data["prompt"], task_data["agent_type"], _json(task_data["dependencies"]),
+                        _json(task_data["execution_policy"]), _json(task_data["retry_policy"]),
+                        _json(task_data["expected_outputs"]), _json(task_data["ui_position"]),
+                    ),
+                )
 
     def _restore(self, row) -> Workflow:
         task_rows = self.database.connection.execute(
@@ -140,6 +200,10 @@ class RunRepository:
                 (data["id"], data["workflow_id"], data["status"], data["started_at"], data["completed_at"], data["created_at"]),
             )
 
+    def get(self, run_id: str) -> Run | None:
+        row = self.database.connection.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+        return self._run(row) if row else None
+
     def update(self, run: Run) -> None:
         data = _dump(run)
         with self.database.transaction() as connection:
@@ -163,6 +227,93 @@ class RunRepository:
                 ),
             )
 
+    def update_attempt(self, attempt: TaskAttempt) -> None:
+        data = _dump(attempt)
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """UPDATE task_attempts SET node_id=?,status=?,started_at=?,completed_at=?,error_json=?,result_manifest_json=?
+                WHERE id=?""",
+                (
+                    data["node_id"], data["status"], data["started_at"], data["completed_at"],
+                    _json(data["error"]) if data["error"] is not None else None,
+                    _json(data["result_manifest"]) if data["result_manifest"] is not None else None,
+                    data["id"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(attempt.id)
+
+    def latest_attempts(self, run_id: str) -> dict[str, TaskAttempt]:
+        return self._latest_attempts(run_id)
+
+    def count_active_attempts_by_node(self) -> dict[str, int]:
+        active_statuses = tuple(
+            status.value
+            for status in (
+                TaskStatus.DISPATCHING,
+                TaskStatus.RUNNING,
+                TaskStatus.COLLECTING,
+                TaskStatus.CANCELLING,
+            )
+        )
+        placeholders = ",".join("?" for _ in active_statuses)
+        rows = self.database.connection.execute(
+            f"""SELECT node_id,COUNT(*) AS active_count FROM task_attempts
+            WHERE node_id IS NOT NULL AND status IN ({placeholders})
+            GROUP BY node_id""",
+            active_statuses,
+        ).fetchall()
+        return {row["node_id"]: row["active_count"] for row in rows}
+
+    def commit_attempt_success(
+        self,
+        attempt: TaskAttempt,
+        artifacts: list[Artifact],
+        event_payload: dict[str, Any],
+    ) -> None:
+        attempt_data = _dump(attempt)
+        created_at = datetime.now(timezone.utc)
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """UPDATE task_attempts SET node_id=?,status=?,started_at=?,completed_at=?,error_json=?,result_manifest_json=?
+                WHERE id=?""",
+                (
+                    attempt_data["node_id"], attempt_data["status"], attempt_data["started_at"], attempt_data["completed_at"],
+                    _json(attempt_data["error"]) if attempt_data["error"] is not None else None,
+                    _json(attempt_data["result_manifest"]) if attempt_data["result_manifest"] is not None else None,
+                    attempt_data["id"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(attempt.id)
+            for artifact in artifacts:
+                data = _dump(artifact)
+                connection.execute(
+                    """INSERT INTO artifacts(id,run_id,task_id,attempt_id,relative_path,media_type,size,sha256,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+                    relative_path=excluded.relative_path,media_type=excluded.media_type,size=excluded.size,
+                    sha256=excluded.sha256,created_at=excluded.created_at""",
+                    tuple(
+                        data[key]
+                        for key in (
+                            "id", "run_id", "task_id", "attempt_id", "relative_path", "media_type", "size", "sha256", "created_at"
+                        )
+                    ),
+                )
+            connection.execute(
+                "INSERT INTO events(run_id,event_type,payload_json,created_at) VALUES (?,?,?,?)",
+                (attempt.run_id, "task.status_changed", _json(event_payload), created_at.isoformat()),
+            )
+
+    def list_attempts(self, run_id: str, task_id: str | None = None) -> list[TaskAttempt]:
+        query = "SELECT * FROM task_attempts WHERE run_id=?"
+        parameters: tuple[str, ...] = (run_id,)
+        if task_id is not None:
+            query += " AND task_id=?"
+            parameters += (task_id,)
+        rows = self.database.connection.execute(query + " ORDER BY task_id,attempt", parameters).fetchall()
+        return [self._attempt(row) for row in rows]
+
     def list_recoverable(self) -> list[RecoverableRun]:
         placeholders = ",".join("?" for _ in self.TERMINAL_STATUSES)
         rows = self.database.connection.execute(
@@ -182,19 +333,40 @@ class RunRepository:
         ).fetchall()
         attempts = {}
         for row in rows:
-            data = dict(row)
-            error_json = data.pop("error_json")
-            result_manifest_json = data.pop("result_manifest_json")
-            data["error"] = json.loads(error_json) if error_json else None
-            data["result_manifest"] = json.loads(result_manifest_json) if result_manifest_json else None
-            attempt = TaskAttempt.model_validate(data)
+            attempt = self._attempt(row)
             attempts[attempt.task_id] = attempt
         return attempts
+
+    @staticmethod
+    def _attempt(row) -> TaskAttempt:
+        data = dict(row)
+        error_json = data.pop("error_json")
+        result_manifest_json = data.pop("result_manifest_json")
+        data["error"] = json.loads(error_json) if error_json else None
+        data["result_manifest"] = json.loads(result_manifest_json) if result_manifest_json else None
+        return TaskAttempt.model_validate(data)
 
 
 class NodeRepository:
     def __init__(self, database: Database):
         self.database = database
+
+    def get(self, node_id: str) -> HermesNode | None:
+        row = self.database.connection.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data["capabilities_json"] = json.loads(data["capabilities_json"])
+        return HermesNode.model_validate(data)
+
+    def list(self) -> list[HermesNode]:
+        rows = self.database.connection.execute("SELECT * FROM nodes ORDER BY id").fetchall()
+        nodes = []
+        for row in rows:
+            data = dict(row)
+            data["capabilities_json"] = json.loads(data["capabilities_json"])
+            nodes.append(HermesNode.model_validate(data))
+        return nodes
 
     def upsert(self, node: HermesNode) -> None:
         data = _dump(node)
@@ -213,10 +385,21 @@ class NodeRepository:
                 values,
             )
 
+    def delete(self, node_id: str) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute("DELETE FROM nodes WHERE id=?", (node_id,))
+        return cursor.rowcount == 1
+
 
 class ArtifactRepository:
     def __init__(self, database: Database):
         self.database = database
+
+    def list_for_run(self, run_id: str) -> list[Artifact]:
+        rows = self.database.connection.execute(
+            "SELECT * FROM artifacts WHERE run_id=? ORDER BY relative_path", (run_id,)
+        ).fetchall()
+        return [Artifact.model_validate(dict(row)) for row in rows]
 
     def save(self, artifact: Artifact) -> None:
         data = _dump(artifact)

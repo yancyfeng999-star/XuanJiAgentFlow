@@ -1,5 +1,20 @@
 import '@testing-library/jest-dom/vitest';
 
+const nativeGetComputedStyle = window.getComputedStyle.bind(window);
+window.getComputedStyle = (element, pseudoElement) => {
+  try {
+    return nativeGetComputedStyle(element, pseudoElement);
+  } catch (error) {
+    if (error instanceof TypeError && String(error).includes('object null is not iterable')) {
+      if (element instanceof HTMLElement || element instanceof SVGElement) {
+        return element.style;
+      }
+      return document.documentElement.style;
+    }
+    throw error;
+  }
+};
+
 class ResizeObserverMock {
   private readonly callback: ResizeObserverCallback;
 
@@ -21,6 +36,16 @@ class ResizeObserverMock {
 Object.defineProperty(globalThis, 'ResizeObserver', {
   writable: true,
   value: ResizeObserverMock,
+});
+
+class DOMMatrixReadOnlyMock {
+  inverse() { return this; }
+  transformPoint(point: DOMPointInit) { return point; }
+}
+
+Object.defineProperty(globalThis, 'DOMMatrixReadOnly', {
+  writable: true,
+  value: DOMMatrixReadOnlyMock,
 });
 
 Object.defineProperties(HTMLElement.prototype, {

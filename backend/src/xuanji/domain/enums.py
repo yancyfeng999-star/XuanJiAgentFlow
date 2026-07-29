@@ -48,8 +48,8 @@ class NodeStatus(StrEnum):
 
 
 TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
-    TaskStatus.PENDING: {TaskStatus.READY, TaskStatus.SKIPPED, TaskStatus.BLOCKED},
-    TaskStatus.READY: {TaskStatus.DISPATCHING, TaskStatus.SKIPPED, TaskStatus.BLOCKED},
+    TaskStatus.PENDING: {TaskStatus.READY, TaskStatus.CANCELLED, TaskStatus.SKIPPED, TaskStatus.BLOCKED},
+    TaskStatus.READY: {TaskStatus.DISPATCHING, TaskStatus.CANCELLED, TaskStatus.SKIPPED, TaskStatus.BLOCKED},
     TaskStatus.DISPATCHING: {TaskStatus.RUNNING, TaskStatus.DISPATCH_FAILED, TaskStatus.BLOCKED},
     TaskStatus.DISPATCH_FAILED: {TaskStatus.RETRY_WAIT, TaskStatus.FAILED, TaskStatus.BLOCKED},
     TaskStatus.RUNNING: {TaskStatus.COLLECTING, TaskStatus.FAILED, TaskStatus.CANCELLING, TaskStatus.BLOCKED},
@@ -65,7 +65,7 @@ TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
 }
 
 RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
-    RunStatus.PENDING: {RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.BLOCKED},
+    RunStatus.PENDING: {RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.BLOCKED},
     RunStatus.RUNNING: {RunStatus.PAUSED, RunStatus.CANCELLING, RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.BLOCKED},
     RunStatus.PAUSED: {RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.BLOCKED},
     RunStatus.CANCELLING: {RunStatus.CANCELLED},

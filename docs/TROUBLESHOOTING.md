@@ -1,0 +1,71 @@
+# 排障手册
+
+## Coordinator 无法启动
+
+**症状：** UI 显示「Coordinator 未能就绪」或 `timed out waiting for coordinator`。
+
+检查：
+
+1. 端口占用：换 `--port` 或确认 sidecar 打印的 `XUANJI_PORT=…`。
+2. 依赖：`.venv/bin/python -m xuanji --help` 是否可运行；缺少 uvicorn 时安装 `uvicorn[standard]`。
+3. data-dir 权限：路径需可写（SQLite、vault、projects）。
+4. Tauri sidecar：`app/src-tauri/binaries/xuanji-coordinator*` 是否可执行。  
+   开发包装脚本需能找到仓库 `.venv` 或 `XUANJI_PYTHON`。
+
+## 规划失败
+
+| 错误码 | 含义 | 处理 |
+|---|---|---|
+| `planner_not_configured` | 未配置 Planner | 设置 → 解锁保险库 → 保存 base_url/model/key |
+| `vault_locked` / 423 | 保险库锁定 | 输入主密码解锁 |
+| `planner_invalid_output` | 模型输出无法校验 | 检查模型；系统最多自动修复一次 |
+
+E2E MockPlanner 仅在 `scripts/e2e_stack.py` 中注入，生产路径不会静默成功。
+
+## 审核 / 编辑
+
+- `workflow_frozen` (409)：已审核不可改，需重新规划新版本。
+- `workflow_invalid` (422)：环依赖等；错误详情不回显敏感 prompt。
+
+## 执行卡住或失败
+
+1. **无在线节点：** 节点列表 status 非 online，或 Token 未配置。
+2. **离线 / 连不上：** 调度会持久化为 `blocked` / `failed`，**不会**冒充 success。
+3. **取消中：** `cancelling` 需等待远端确认；恢复逻辑会重发 cancel。
+4. **产物哈希失败：** Fake `BAD_HASH` 与真实校验路径均会失败，不会忽略。
+
+## WebSocket 不更新
+
+- 确认 Origin 为 `localhost` / `127.0.0.1` / `tauri://localhost`。
+- 重连时带 `last_event_id`；事件 `event_id` 严格递增（见 E2E / API 测试）。
+- UI 指示：`实时已连接` / `实时重连中`。
+
+## SSH / 隧道
+
+- 报错含 host key / fingerprint：需人工确认，禁止改成 `StrictHostKeyChecking=no`。
+- `ExitOnForwardFailure=yes`：远端端口未监听时建立失败属预期。
+- 应用退出应清理隧道；若 Coordinator 崩溃，检查残留 `ssh -N -L …` 进程。
+
+## E2E / verify-all
+
+```bash
+# 明确跳过（会在日志中显示 SKIPPED，不是假通过）
+bash scripts/verify-all.sh --skip-e2e
+bash scripts/verify-all.sh --skip-tauri-build
+```
+
+- Playwright 配置缺失会 **非零退出**（除非 `--skip-e2e`）。
+- 端口冲突：设置 `E2E_COORDINATOR_PORT` / `E2E_VITE_PORT`。
+- Chromium：首次 `npx playwright install chromium`。
+
+## Tauri / .app 构建
+
+1. 前端：`cd app && npm run build`
+2. Sidecar：PyInstaller 或开发包装脚本
+3. `cd app && npm run build:tauri`
+
+签名失败、钥匙串无证书时：可 `--skip-tauri-build` 并保留 `cargo build --release` + `dist/`；签名/公证为外部验收。
+
+## 旧代码残留
+
+若仍看到 `sessionStorage` 业务流、`backend/main.py` 或 `lib/api.ts`，说明未更新到清理提交。权威 API 客户端为 `app/src/lib/client.ts`，Coordinator 为 `backend/src/xuanji`。

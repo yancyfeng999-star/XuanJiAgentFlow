@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from executor import HermesNodeClient, NodeExecutor
@@ -12,7 +13,12 @@ from executor import HermesNodeClient, NodeExecutor
 
 class CreateTaskRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=200_000)
-    idempotency_key: str | None = None
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$",
+    )
 
 
 def create_app(
@@ -50,9 +56,13 @@ def create_app(
     @app.post("/v1/tasks", status_code=202)
     async def create_task(request: CreateTaskRequest, _: None = Depends(authorize)) -> dict:
         task_id = request.idempotency_key or None
-        record = executor.create(request.goal, task_id)
-        record = executor.start(record.id)
-        return record.__dict__
+        try:
+            return executor.create_and_start(request.goal, task_id).__dict__
+        except FileExistsError:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "idempotency_conflict", "message": "idempotency key has a different goal"},
+            ) from None
 
     @app.get("/v1/tasks/{task_id}")
     async def get_task(task_id: str, _: None = Depends(authorize)) -> dict:
@@ -84,7 +94,50 @@ def create_app(
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail={"code": "task_not_found", "message": task_id})
 
+    @app.get("/v1/tasks/{task_id}/artifacts/{artifact_path:path}")
+    async def download_artifact(
+        task_id: str,
+        artifact_path: str,
+        _: None = Depends(authorize),
+    ) -> StreamingResponse:
+        try:
+            artifact, size, digest = executor.artifact(task_id, artifact_path)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "unsafe_artifact_path", "message": "artifact path is not allowed"},
+            ) from None
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "artifact_not_found", "message": artifact_path},
+            ) from None
+        return StreamingResponse(
+            executor.stream_artifact(artifact),
+            media_type="application/octet-stream",
+            headers={
+                "Content-Length": str(size),
+                "X-Artifact-Size": str(size),
+                "X-Artifact-SHA256": digest,
+            },
+        )
+
     return app
 
 
+def main() -> None:
+    import os
+
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.getenv("XUANJI_NODE_HOST", "127.0.0.1"),
+        port=int(os.getenv("XUANJI_NODE_PORT", "8765")),
+    )
+
+
 app = create_app()
+
+if __name__ == "__main__":
+    main()

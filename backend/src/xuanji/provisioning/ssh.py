@@ -13,16 +13,38 @@ class SSHHost:
     key_path: str | None = None
 
 
-class SSHRunner:
-    """Executes SSH commands for remote node provisioning."""
+def app_known_hosts_path(data_dir: str | Path) -> Path:
+    """Application-scoped known_hosts path (never system ~/.ssh for tunnels/provisioning)."""
+    return Path(data_dir) / "ssh" / "known_hosts"
 
-    def __init__(self, host: SSHHost) -> None:
+
+def ensure_known_hosts_file(path: str | Path) -> Path:
+    """Create an empty known_hosts file if missing; parent dirs are created."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        target.touch()
+    return target
+
+
+class SSHRunner:
+    """Executes SSH commands for remote node provisioning.
+
+    Always uses StrictHostKeyChecking=yes with an explicit UserKnownHostsFile.
+    Never passes node tokens on argv — tokens (when needed) go via stdin only.
+    """
+
+    def __init__(self, host: SSHHost, *, known_hosts_path: str | Path | None = None) -> None:
         self.host = host
+        self.known_hosts_path = ensure_known_hosts_file(
+            known_hosts_path or Path.home() / ".ssh" / "known_hosts"
+        )
 
     def _base_args(self) -> list[str]:
         args = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={self.known_hosts_path}",
             "-o", "ConnectTimeout=10",
             "-o", "BatchMode=yes",
             "-p", str(self.host.port),
@@ -32,9 +54,21 @@ class SSHRunner:
         args.append(f"{self.host.user}@{self.host.host}")
         return args
 
-    def run(self, command: str, timeout: float = 30) -> tuple[int, str, str]:
+    def run(
+        self,
+        command: str,
+        timeout: float = 30,
+        *,
+        input_text: str | None = None,
+    ) -> tuple[int, str, str]:
         args = self._base_args() + [command]
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            input=input_text,
+        )
         return result.returncode, result.stdout, result.stderr
 
     def check_hermes(self) -> dict:
@@ -55,10 +89,12 @@ class SSHRunner:
 
     def start_api_server(self, port: int = 8642, api_key: str = "") -> dict:
         cmd = f"hermes config set api_server.enabled true && hermes config set api_server.port {port}"
+        input_text = None
         if api_key:
-            cmd += f" && hermes config set api_server.api_key {api_key}"
+            cmd += " && IFS= read -r api_key && hermes config set api_server.api_key \"$api_key\""
+            input_text = api_key
         cmd += " && hermes gateway start 2>&1"
-        code, out, err = self.run(cmd, timeout=30)
+        code, out, err = self.run(cmd, timeout=30, input_text=input_text)
         return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
 
     def stop_api_server(self) -> dict:
@@ -72,7 +108,12 @@ class SSHRunner:
 
     def deploy_node_agent(self, local_package_path: str, remote_dir: str = "~/.xuanji-node") -> dict:
         # Upload package
-        scp_args = ["scp", "-o", "StrictHostKeyChecking=no", "-P", str(self.host.port)]
+        scp_args = [
+            "scp",
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={self.known_hosts_path}",
+            "-P", str(self.host.port),
+        ]
         if self.host.key_path:
             scp_args.extend(["-i", self.host.key_path])
         scp_args.extend([local_package_path, f"{self.host.user}@{self.host.host}:{remote_dir}/package.tar.gz"])
@@ -88,11 +129,25 @@ class SSHRunner:
         return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
 
 
+def provisioning_succeeded(steps: list[dict]) -> bool:
+    if not steps or steps[-1].get("step") != "verify_api_server":
+        return False
+    if steps[-1].get("online") is not True:
+        return False
+    return all(
+        step.get("success", step.get("installed", step.get("online", False))) is True
+        for step in steps
+    )
+
+
 class ProvisioningService:
     """High-level provisioning workflow."""
 
+    def __init__(self, *, known_hosts_path: str | Path | None = None) -> None:
+        self.known_hosts_path = Path(known_hosts_path) if known_hosts_path else None
+
     def _create_runner(self, host: SSHHost) -> SSHRunner:
-        return SSHRunner(host)
+        return SSHRunner(host, known_hosts_path=self.known_hosts_path)
 
     def provision_remote(self, host: SSHHost, api_key: str = "", hermes_port: int = 8642) -> list[dict]:
         runner = self._create_runner(host)

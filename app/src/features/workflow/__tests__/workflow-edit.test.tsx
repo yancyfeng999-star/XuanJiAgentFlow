@@ -1,0 +1,176 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import AppShell from '../../../app/AppShell';
+import type { CoordinatorClient, Project, Workflow } from '../../../lib/client';
+import { setWorkspaceClient, useWorkspaceStore } from '../../../store/workspaceStore';
+
+const project: Project = {
+  id: 'project-1', name: 'Editable project', root_path: '/tmp/project-1', active_workflow_version: 1,
+  created_at: '2026-07-28T00:00:00Z', updated_at: '2026-07-28T00:00:00Z',
+};
+const workflow: Workflow = {
+  id: 'workflow-1', project_id: 'project-1', version: 1, goal: 'Build report', planner_provider: null, planner_model: null,
+  status: 'draft', graph_json: {}, created_at: '2026-07-28T00:00:00Z', tasks: [{
+    id: 'research', workflow_id: 'workflow-1', title: 'Research', description: 'Read sources', prompt: 'Find evidence', agent_type: 'research', dependencies: [],
+    execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: ['research'], timeout_seconds: 1800 },
+    retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], ui_position: { x: 100, y: 100 },
+  }],
+};
+
+const client = {
+  listProjects: vi.fn().mockResolvedValue([project]), getProject: vi.fn().mockResolvedValue(project), getProjectWorkflow: vi.fn().mockResolvedValue(workflow), getWorkflow: vi.fn().mockResolvedValue(workflow),
+  plan: vi.fn().mockResolvedValue(workflow), updateWorkflow: vi.fn().mockImplementation(async (_id, payload) => ({ ...workflow, ...payload })),
+  validateWorkflow: vi.fn().mockResolvedValue({ valid: true, topological_order: ['research'] }), reviewWorkflow: vi.fn().mockResolvedValue({ ...workflow, status: 'reviewed' }),
+  createRun: vi.fn().mockResolvedValue({ id: 'run-1', workflow_id: 'workflow-1', status: 'pending', started_at: null, completed_at: null, created_at: '2026-07-28T00:00:00Z', attempts: [] }),
+  startRun: vi.fn().mockResolvedValue({ id: 'run-1', status: 'accepted' }),
+  listNodes: vi.fn().mockResolvedValue([]), createNode: vi.fn().mockImplementation(async (value) => ({ ...value, credential_configured: Boolean(value.credential), status: 'unknown', capabilities_json: {}, max_concurrency: 1, running_tasks: 0, success_rate: 1, last_seen_at: null })),
+  updateNode: vi.fn(), deleteNode: vi.fn(), diagnoseNode: vi.fn(), provisionNode: vi.fn().mockResolvedValue({ node_id: 'remote-1', completed: true, steps: [] }),
+  getSecurityStatus: vi.fn().mockResolvedValue({ status: 'uninitialized' }), initializeSecurity: vi.fn().mockResolvedValue({ status: 'unlocked' }),
+  unlockSecurity: vi.fn().mockResolvedValue({ status: 'unlocked' }), lockSecurity: vi.fn().mockResolvedValue({ status: 'locked' }), setCredential: vi.fn(),
+  getPlannerConfig: vi.fn().mockResolvedValue({ base_url: null, model: null, credential_key: null, credential_configured: false }),
+  setPlannerConfig: vi.fn().mockResolvedValue({ base_url: 'https://planner.test/v1', model: 'model', credential_key: 'planner.primary', credential_configured: true }),
+} as unknown as CoordinatorClient;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(client.getPlannerConfig).mockResolvedValue({
+    base_url: null, model: null, credential_key: null, credential_configured: false,
+  });
+  vi.mocked(client.setPlannerConfig).mockImplementation(async (input) => {
+    const redacted = {
+      base_url: input.base_url, model: input.model, credential_key: input.credential_key, credential_configured: true,
+    };
+    vi.mocked(client.getPlannerConfig).mockResolvedValue(redacted);
+    return redacted;
+  });
+  setWorkspaceClient(client);
+  useWorkspaceStore.getState().resetWorkspace();
+});
+afterEach(cleanup);
+
+async function renderReadyShell() {
+  render(<AppShell />);
+  await screen.findByRole('navigation', { name: '项目资源栏' });
+}
+
+describe('editable workflow workspace', () => {
+  it('loads a project and edits a selected task until review freezes it', async () => {
+    render(<AppShell />);
+    await screen.findByRole('button', { name: '审核工作流' });
+    expect(useWorkspaceStore.getState().workflow?.tasks[0].title).toBe('Research');
+    act(() => useWorkspaceStore.getState().selectTask('research'));
+    fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: 'Investigate' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存任务' }));
+    await waitFor(() => expect(client.updateWorkflow).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: '审核工作流' }));
+    await waitFor(() => expect(screen.getByText('已审核，编辑已冻结')).toBeInTheDocument());
+    expect(screen.getByLabelText('任务标题')).toBeDisabled();
+  });
+
+  it('offers minimal task add and delete controls only while draft', async () => {
+    render(<AppShell />);
+    await screen.findByRole('button', { name: '新增任务' });
+
+    fireEvent.click(screen.getByRole('button', { name: '新增任务' }));
+    await waitFor(() => expect(client.updateWorkflow).toHaveBeenCalled());
+
+    act(() => useWorkspaceStore.getState().selectTask('research'));
+    fireEvent.click(screen.getByRole('button', { name: '删除任务' }));
+    await waitFor(() => expect(client.updateWorkflow).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole('button', { name: '审核工作流' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '新增任务' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: '删除任务' })).not.toBeInTheDocument();
+  });
+
+  it('gates execution before review and executes only after review', async () => {
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Editable project')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '执行全部' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '审核工作流' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '执行全部' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '执行全部' }));
+
+    await waitFor(() => expect(client.createRun).toHaveBeenCalledWith('workflow-1'));
+    expect(client.startRun).toHaveBeenCalledWith('run-1');
+  });
+
+  it('shows that locked vault credentials cannot be confirmed', async () => {
+    vi.mocked(client.listNodes).mockResolvedValue([{
+      id: 'locked-node', name: 'Locked Node', kind: 'local', api_url: 'http://node.test',
+      ssh_host: null, ssh_port: null, ssh_user: null, ssh_key_path: null, status: 'unknown',
+      capabilities_json: {}, max_concurrency: 1, running_tasks: 0, success_rate: 1,
+      last_seen_at: null, credential_configured: null,
+    }]);
+    vi.mocked(client.getPlannerConfig).mockResolvedValue({
+      base_url: 'https://planner.test/v1', model: 'model', credential_key: 'planner.primary', credential_configured: null,
+    });
+    await renderReadyShell();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes 节点' }));
+
+    expect(await screen.findByText('锁定后不可确认 Token 配置状态')).toBeInTheDocument();
+    expect(screen.queryByText('Token 已配置')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '设置' }));
+    expect(await screen.findByText('锁定后不可确认 API Key 配置状态')).toBeInTheDocument();
+    expect(screen.queryByText('API Key 已配置')).not.toBeInTheDocument();
+  });
+
+  it('shows structured error when remote provisioning fails verification', async () => {
+    vi.mocked(client.listNodes).mockResolvedValue([{
+      id: 'remote-1', name: 'Remote', kind: 'remote', api_url: 'http://remote.test:8642',
+      ssh_host: 'remote.test', ssh_port: 2222, ssh_user: 'runner', ssh_key_path: '/keys/id_ed25519',
+      status: 'unknown', capabilities_json: {}, max_concurrency: 1, running_tasks: 0, success_rate: 1,
+      last_seen_at: null, credential_configured: true,
+    }]);
+    vi.mocked(client.provisionNode).mockResolvedValue({
+      node_id: 'remote-1', completed: false, steps: [{ step: 'verify_api_server', online: false }],
+    });
+    await renderReadyShell();
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes 节点' }));
+    await screen.findByText('Token 已配置');
+    fireEvent.change(screen.getByLabelText('Hermes 端口'), { target: { value: '8642' } });
+    fireEvent.click(screen.getByRole('button', { name: '远程部署' }));
+    expect(await screen.findByText('节点部署未通过最终验证')).toBeInTheDocument();
+  });
+
+  it('initializes the vault, saves redacted planner configuration, and configures a remote node', async () => {
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Editable project')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '设置' }));
+    fireEvent.change(screen.getByLabelText('主密码'), { target: { value: 'master-password' } });
+    fireEvent.click(screen.getByRole('button', { name: '初始化安全存储' }));
+    await waitFor(() => expect(client.initializeSecurity).toHaveBeenCalledWith('master-password'));
+
+    fireEvent.change(screen.getByLabelText('Planner Base URL'), { target: { value: 'https://planner.test/v1' } });
+    fireEvent.change(screen.getByLabelText('Planner 模型'), { target: { value: 'model' } });
+    fireEvent.change(screen.getByLabelText('Planner API Key'), { target: { value: 'planner-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存 Planner 配置' }));
+    await waitFor(() => expect(screen.getByText('API Key 已配置')).toBeInTheDocument());
+    expect(client.setPlannerConfig).toHaveBeenCalled();
+    expect(screen.getByLabelText('Planner API Key')).toHaveValue('');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes 节点' }));
+    fireEvent.change(screen.getByLabelText('节点 ID'), { target: { value: 'remote-1' } });
+    fireEvent.change(screen.getByLabelText('节点名称'), { target: { value: 'Remote' } });
+    fireEvent.change(screen.getByLabelText('节点地址'), { target: { value: 'http://remote.test:8642' } });
+    fireEvent.change(screen.getByLabelText('SSH Host'), { target: { value: 'remote.test' } });
+    fireEvent.change(screen.getByLabelText('SSH 端口'), { target: { value: '2222' } });
+    fireEvent.change(screen.getByLabelText('SSH 用户'), { target: { value: 'runner' } });
+    fireEvent.change(screen.getByLabelText('SSH Key Path'), { target: { value: '/keys/id_ed25519' } });
+    fireEvent.change(screen.getByLabelText('节点 Token'), { target: { value: 'node-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存节点' }));
+
+    await waitFor(() => expect(client.createNode).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'remote-1', api_url: 'http://remote.test:8642', ssh_host: 'remote.test', ssh_port: 2222,
+      ssh_user: 'runner', ssh_key_path: '/keys/id_ed25519', credential: 'node-secret',
+    })));
+    expect((await screen.findAllByText('Token 已配置')).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('节点 Token')).toHaveValue('');
+  });
+});

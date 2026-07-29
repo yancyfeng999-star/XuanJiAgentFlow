@@ -46,6 +46,47 @@ def test_migration_creates_versioned_schema_and_is_idempotent(tmp_path):
     assert version["version"] == CURRENT_SCHEMA_VERSION
 
 
+def test_migration_upgrades_global_task_ids_without_losing_run_records(tmp_path):
+    db = Database(tmp_path / "legacy.db")
+    created = timestamp().isoformat()
+    with db.transaction() as connection:
+        connection.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+        connection.execute("INSERT INTO schema_version(version) VALUES (1),(2)")
+        connection.execute("CREATE TABLE projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,root_path TEXT NOT NULL UNIQUE,active_workflow_version INTEGER,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE workflows (id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,version INTEGER NOT NULL,goal TEXT NOT NULL,planner_provider TEXT,planner_model TEXT,status TEXT NOT NULL,graph_json TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(project_id,version))")
+        connection.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY,workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,title TEXT NOT NULL,description TEXT NOT NULL,prompt TEXT NOT NULL,agent_type TEXT NOT NULL,dependencies_json TEXT NOT NULL,execution_policy_json TEXT NOT NULL,retry_policy_json TEXT NOT NULL,expected_outputs_json TEXT NOT NULL,ui_position_json TEXT NOT NULL)")
+        connection.execute("CREATE TABLE runs (id TEXT PRIMARY KEY,workflow_id TEXT NOT NULL REFERENCES workflows(id),status TEXT NOT NULL,started_at TEXT,completed_at TEXT,created_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE nodes (id TEXT PRIMARY KEY,name TEXT NOT NULL,kind TEXT NOT NULL,api_url TEXT NOT NULL,ssh_host TEXT,ssh_port INTEGER,ssh_user TEXT,ssh_key_path TEXT,status TEXT NOT NULL,capabilities_json TEXT NOT NULL,max_concurrency INTEGER NOT NULL,running_tasks INTEGER NOT NULL,success_rate REAL NOT NULL,last_seen_at TEXT)")
+        connection.execute("CREATE TABLE task_attempts (id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,task_id TEXT NOT NULL,node_id TEXT REFERENCES nodes(id),attempt INTEGER NOT NULL,status TEXT NOT NULL,started_at TEXT,completed_at TEXT,error_json TEXT,result_manifest_json TEXT,UNIQUE(run_id,task_id,attempt))")
+        connection.execute("CREATE TABLE artifacts (id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,task_id TEXT NOT NULL,attempt_id TEXT REFERENCES task_attempts(id),relative_path TEXT NOT NULL,media_type TEXT NOT NULL,size INTEGER NOT NULL,sha256 TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(run_id,relative_path))")
+        connection.execute("CREATE TABLE events (event_id INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL,event_type TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL)")
+        connection.execute("CREATE TABLE app_config (key TEXT PRIMARY KEY,value_json TEXT NOT NULL,updated_at TEXT NOT NULL)")
+        connection.execute("INSERT INTO projects VALUES (?,?,?,?,?,?)", ("p1", "Legacy", "/tmp/legacy", 1, created, created))
+        connection.execute("INSERT INTO workflows VALUES (?,?,?,?,?,?,?,?,?)", ("w1", "p1", 1, "Legacy", None, None, "draft", "{}", created))
+        connection.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?)", ("research", "w1", "Research", "", "", "general", "[]", '{"mode":"auto","node_id":null,"node_group":null,"required_models":[],"required_tools":[],"required_tags":[],"timeout_seconds":1800}', '{"max_attempts":3,"delay_seconds":1}', "[]", '{"x":0,"y":0}'))
+        connection.execute("INSERT INTO runs VALUES (?,?,?,?,?,?)", ("r1", "w1", "running", None, None, created))
+        connection.execute("INSERT INTO task_attempts VALUES (?,?,?,?,?,?,?,?,?,?)", ("a1", "r1", "research", None, 1, "running", None, None, None, None))
+        connection.execute("INSERT INTO artifacts VALUES (?,?,?,?,?,?,?,?,?)", ("artifact-1", "r1", "research", "a1", "runs/r1/output.txt", "text/plain", 1, "0" * 64, created))
+
+    migrate(db)
+
+    assert tuple(db.connection.execute("SELECT id,workflow_id FROM tasks").fetchone()) == ("research", "w1")
+    assert tuple(db.connection.execute("SELECT id,task_id FROM task_attempts").fetchone()) == ("a1", "research")
+    assert tuple(db.connection.execute("SELECT id,attempt_id FROM artifacts").fetchone()) == ("artifact-1", "a1")
+    db.close()
+
+
+def test_tasks_are_keyed_within_workflow_and_run_records_keep_task_ids(database):
+    task_columns = database.connection.execute("PRAGMA table_info(tasks)").fetchall()
+    primary_key = [row["name"] for row in sorted(task_columns, key=lambda row: row["pk"]) if row["pk"]]
+    assert primary_key == ["workflow_id", "id"]
+
+    attempt_foreign_keys = database.connection.execute("PRAGMA foreign_key_list(task_attempts)").fetchall()
+    artifact_foreign_keys = database.connection.execute("PRAGMA foreign_key_list(artifacts)").fetchall()
+    assert {row["table"] for row in attempt_foreign_keys} == {"runs", "nodes"}
+    assert {row["table"] for row in artifact_foreign_keys} == {"runs", "task_attempts"}
+
+
 def test_explicit_transaction_rolls_back_on_error(database):
     with pytest.raises(sqlite3.IntegrityError):
         with database.transaction() as connection:
@@ -74,7 +115,7 @@ def test_create_and_update_project(database):
     assert repository.list()[0].id == "p1"
 
 
-def test_save_multiple_workflow_versions_and_tasks_atomically(database):
+def test_save_multiple_workflow_versions_with_reused_task_ids(database):
     project_repository = ProjectRepository(database)
     workflow_repository = WorkflowRepository(database)
     project_repository.create(Project(id="p1", name="First", root_path="/tmp/first"))
@@ -84,7 +125,7 @@ def test_save_multiple_workflow_versions_and_tasks_atomically(database):
         project_id="p1",
         version=1,
         goal="Goal v1",
-        tasks=[Task(id="t1", workflow_id="w1", title="One")],
+        tasks=[Task(id="research", workflow_id="w1", title="Research v1")],
     )
     second = Workflow(
         id="w2",
@@ -92,20 +133,18 @@ def test_save_multiple_workflow_versions_and_tasks_atomically(database):
         version=2,
         goal="Goal v2",
         status=WorkflowStatus.REVIEWED,
-        tasks=[
-            Task(id="t2", workflow_id="w2", title="Two"),
-            Task(id="t3", workflow_id="w2", title="Three", dependencies=["t2"]),
-        ],
+        tasks=[Task(id="research", workflow_id="w2", title="Research v2")],
     )
     workflow_repository.save(first)
     workflow_repository.save(second)
 
     versions = workflow_repository.list_versions("p1")
     assert [workflow.version for workflow in versions] == [1, 2]
-    restored = workflow_repository.get("w2")
-    assert restored is not None
-    assert restored.status is WorkflowStatus.REVIEWED
-    assert restored.topological_order() == ["t2", "t3"]
+    assert versions[0].tasks[0].title == "Research v1"
+    assert versions[1].tasks[0].title == "Research v2"
+    assert workflow_repository.get_active("p1") == versions[1]
+    assert workflow_repository.get("w1") == versions[0]
+    assert workflow_repository.get("w2") == versions[1]
 
 
 def test_restore_non_terminal_runs_with_latest_attempts(database):

@@ -27,6 +27,9 @@ class ArtifactManager:
         self.projects_root.mkdir(parents=True, exist_ok=True)
         self._project_paths: dict[str, Path] = {}
 
+    def register_project(self, project: Project) -> Path:
+        return self.create_project(project)
+
     def create_project(self, project: Project) -> Path:
         root = Path(project.root_path).expanduser()
         if not root.is_absolute():
@@ -113,6 +116,44 @@ class ArtifactManager:
             actual_hash = self._sha256(path)
             if actual_hash != entry.sha256:
                 raise ArtifactVerificationError(f"hash mismatch for {entry.path}")
+
+    async def download_verified_artifact(
+        self,
+        project_id: str,
+        run_id: str,
+        task_id: str,
+        remote_task_id: str,
+        entry: ArtifactEntry,
+        client,
+    ) -> Path:
+        path = self.resolve_project_path(
+            project_id, f"runs/{run_id}/tasks/{task_id}/artifacts/{entry.path}"
+        )
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256()
+        received = 0
+        try:
+            async with client.stream_artifact(remote_task_id, entry.path) as download:
+                if download.size != entry.size or download.sha256 != entry.sha256:
+                    raise ArtifactVerificationError(f"manifest and download headers disagree for {entry.path}")
+                with temporary.open("wb") as stream:
+                    async for chunk in download.body:
+                        stream.write(chunk)
+                        received += len(chunk)
+                        digest.update(chunk)
+            if received != entry.size or digest.hexdigest() != entry.sha256:
+                raise ArtifactVerificationError(f"download hash mismatch for {entry.path}")
+            temporary.replace(path)
+            return path
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+
+    def write_delivery_manifest(self, project_id: str, run_id: str, artifacts: list[dict]) -> Path:
+        path = self.resolve_project_path(project_id, "deliverables/manifest.json")
+        self._atomic_json(path, {"run_id": run_id, "artifacts": artifacts})
+        return path
 
     def finalize_success(
         self, project_id: str, attempt: TaskAttempt, manifest: ArtifactManifest
