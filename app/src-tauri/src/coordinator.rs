@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 const PORT_LINE_PREFIX: &str = "XUANJI_PORT=";
+const SESSION_LINE_PREFIX: &str = "XUANJI_SESSION_TOKEN=";
 const HEALTH_PATH: &str = "/api/status";
 const DEFAULT_HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_PORT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,6 +29,7 @@ pub struct RuntimeInfo {
     pub port: Option<u16>,
     pub data_dir: Option<String>,
     pub pid: Option<u32>,
+    pub session_token: Option<String>,
     pub error: Option<String>,
 }
 
@@ -49,6 +51,7 @@ impl Default for RuntimeInfo {
             port: None,
             data_dir: None,
             pid: None,
+            session_token: None,
             error: None,
         }
     }
@@ -57,25 +60,25 @@ impl Default for RuntimeInfo {
 /// Errors from the coordinator supervisor.
 #[derive(Debug, thiserror::Error)]
 pub enum CoordinatorError {
-    #[error("coordinator is already running")]
+    #[error("Coordinator 已经在运行")]
     AlreadyRunning,
-    #[error("failed to bind free port: {0}")]
+    #[error("无法分配本地端口")]
     PortAllocation(String),
-    #[error("failed to start coordinator process: {0}")]
+    #[error("无法启动 Coordinator 进程")]
     Spawn(String),
-    #[error("coordinator exited before reporting port: {0}")]
+    #[error("Coordinator 在启动完成前退出")]
     EarlyExit(String),
-    #[error("timed out waiting for coordinator port")]
+    #[error("等待 Coordinator 端口超时")]
     PortTimeout,
-    #[error("timed out waiting for coordinator health")]
+    #[error("等待 Coordinator 健康检查超时")]
     HealthTimeout,
-    #[error("health check failed: {0}")]
+    #[error("Coordinator 健康检查失败")]
     HealthFailed(String),
-    #[error("coordinator is not running")]
+    #[error("Coordinator 当前未运行")]
     NotRunning,
-    #[error("sidecar binary not found at {0}")]
+    #[error("未找到 Coordinator Sidecar：{0}")]
     SidecarMissing(String),
-    #[error("io error: {0}")]
+    #[error("本地文件或进程操作失败")]
     Io(String),
 }
 
@@ -134,6 +137,7 @@ pub struct CoordinatorSupervisor {
 struct SupervisorState {
     child: Option<Child>,
     info: RuntimeInfo,
+    consecutive_health_failures: u8,
 }
 
 impl CoordinatorSupervisor {
@@ -142,6 +146,7 @@ impl CoordinatorSupervisor {
             inner: Mutex::new(SupervisorState {
                 child: None,
                 info: RuntimeInfo::default(),
+                consecutive_health_failures: 0,
             }),
         }
     }
@@ -166,21 +171,24 @@ impl CoordinatorSupervisor {
             port: None,
             data_dir: Some(options.data_dir.display().to_string()),
             pid: None,
+            session_token: None,
             error: None,
         };
 
         let result = self.spawn_and_wait(&options);
         match result {
-            Ok((child, port)) => {
+            Ok((child, port, session_token)) => {
                 let pid = child.id();
                 let base_url = format!("http://{}:{}", options.host, port);
                 guard.child = Some(child);
+                guard.consecutive_health_failures = 0;
                 guard.info = RuntimeInfo {
                     status: RuntimeStatus::Healthy,
                     base_url: Some(base_url),
                     port: Some(port),
                     data_dir: Some(options.data_dir.display().to_string()),
                     pid: Some(pid),
+                    session_token,
                     error: None,
                 };
                 Ok(guard.info.clone())
@@ -192,8 +200,10 @@ impl CoordinatorSupervisor {
                     port: None,
                     data_dir: Some(options.data_dir.display().to_string()),
                     pid: None,
+                    session_token: None,
                     error: Some(err.to_string()),
                 };
+                guard.consecutive_health_failures = 0;
                 Err(err)
             }
         }
@@ -207,39 +217,72 @@ impl CoordinatorSupervisor {
             return Ok(guard.info.clone());
         };
 
-        // Prefer graceful terminate, then kill.
-        #[cfg(unix)]
-        {
-            let _ = send_sigterm(child.id());
-            let deadline = Instant::now() + Duration::from_secs(3);
-            loop {
-                match child.try_wait() {
-                    Ok(Some(_)) => break,
-                    Ok(None) if Instant::now() < deadline => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    _ => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        break;
-                    }
-                }
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        terminate_child(&mut child);
 
         guard.info = RuntimeInfo::default();
+        guard.consecutive_health_failures = 0;
         Ok(guard.info.clone())
+    }
+
+    /// Check the managed process and health endpoint, restarting it after
+    /// repeated failures. Intended for the desktop app's background monitor.
+    pub fn recover_if_needed(
+        &self,
+        options: &StartOptions,
+        failure_threshold: u8,
+    ) -> Result<RuntimeInfo, CoordinatorError> {
+        let should_restart = {
+            let mut guard = self.inner.lock().expect("supervisor lock");
+            self.reap_if_exited(&mut guard);
+
+            if guard.child.is_none() {
+                true
+            } else if let Some(port) = guard.info.port {
+                match http_get_status(&options.host, port) {
+                    Ok(code) if (200..300).contains(&code) => {
+                        guard.consecutive_health_failures = 0;
+                        guard.info.status = RuntimeStatus::Healthy;
+                        guard.info.error = None;
+                        return Ok(guard.info.clone());
+                    }
+                    result => {
+                        guard.consecutive_health_failures =
+                            guard.consecutive_health_failures.saturating_add(1);
+                        guard.info.status = RuntimeStatus::Unhealthy;
+                        guard.info.error = Some(match result {
+                            Ok(code) => format!("Coordinator 健康检查返回 HTTP {code}"),
+                            Err(err) => format!("Coordinator 健康检查失败：{err}"),
+                        });
+
+                        if guard.consecutive_health_failures < failure_threshold.max(1) {
+                            return Ok(guard.info.clone());
+                        }
+
+                        if let Some(mut child) = guard.child.take() {
+                            terminate_child(&mut child);
+                        }
+                        true
+                    }
+                }
+            } else {
+                if let Some(mut child) = guard.child.take() {
+                    terminate_child(&mut child);
+                }
+                true
+            }
+        };
+
+        if should_restart {
+            self.start(options.clone())
+        } else {
+            Ok(self.status())
+        }
     }
 
     fn spawn_and_wait(
         &self,
         options: &StartOptions,
-    ) -> Result<(Child, u16), CoordinatorError> {
+    ) -> Result<(Child, u16, Option<String>), CoordinatorError> {
         if !options.allow_any_binary && !options.binary.exists() {
             return Err(CoordinatorError::SidecarMissing(
                 options.binary.display().to_string(),
@@ -266,11 +309,11 @@ impl CoordinatorSupervisor {
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| CoordinatorError::Spawn("missing stdout".into()))?;
+            .ok_or_else(|| CoordinatorError::Spawn("缺少标准输出管道".into()))?;
         let stderr = child
             .stderr
             .take()
-            .ok_or_else(|| CoordinatorError::Spawn("missing stderr".into()))?;
+            .ok_or_else(|| CoordinatorError::Spawn("缺少标准错误管道".into()))?;
 
         // Drain BOTH pipes for the full process lifetime.
         // Stopping after the port line closes the pipe and kills uvicorn
@@ -281,15 +324,16 @@ impl CoordinatorSupervisor {
             drain_pipe_lines(stderr, Some(stderr_for_reader), 8 * 1024);
         });
 
-        let port = match wait_for_port_line_and_drain(stdout, &mut child, options.port_timeout) {
-            Ok(port) => port,
-            Err(err) => {
-                let detail = pipe_tail(&stderr_tail);
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(enrich_process_error(err, detail));
-            }
-        };
+        let (port, session_token) =
+            match wait_for_port_line_and_drain(stdout, &mut child, options.port_timeout) {
+                Ok(runtime) => runtime,
+                Err(err) => {
+                    let detail = pipe_tail(&stderr_tail);
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(enrich_process_error(err, detail));
+                }
+            };
 
         if let Err(err) = wait_for_health(&options.host, port, options.health_timeout) {
             let detail = pipe_tail(&stderr_tail);
@@ -298,7 +342,7 @@ impl CoordinatorSupervisor {
             return Err(enrich_process_error(err, detail));
         }
 
-        Ok((child, port))
+        Ok((child, port, session_token))
     }
 
     fn reap_if_exited(&self, state: &mut SupervisorState) {
@@ -308,17 +352,45 @@ impl CoordinatorSupervisor {
         match child.try_wait() {
             Ok(Some(status)) => {
                 state.child = None;
+                state.consecutive_health_failures = 0;
                 if state.info.status == RuntimeStatus::Healthy {
                     state.info.status = RuntimeStatus::Unhealthy;
-                    state.info.error = Some(format!("coordinator exited: {status}"));
+                    state.info.error = Some(format!("Coordinator 已退出（状态：{status}）"));
                     state.info.pid = None;
                 }
             }
             Ok(None) => {}
             Err(err) => {
-                state.info.error = Some(err.to_string());
+                state.info.error = Some(format!("无法读取 Coordinator 进程状态：{err}"));
             }
         }
+    }
+}
+
+fn terminate_child(child: &mut Child) {
+    // Prefer graceful terminate, then kill.
+    #[cfg(unix)]
+    {
+        let _ = send_sigterm(child.id());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break;
+                }
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
@@ -352,20 +424,25 @@ fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
     stdout: R,
     child: &mut Child,
     timeout: Duration,
-) -> Result<u16, CoordinatorError> {
+) -> Result<(u16, Option<String>), CoordinatorError> {
     let deadline = Instant::now() + timeout;
-    let (tx, rx) = std::sync::mpsc::channel::<Result<u16, String>>();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(u16, Option<String>), String>>();
 
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
         let mut reported_port = false;
+        let mut session_token = None;
         for line in reader.lines() {
             match line {
                 Ok(text) => {
                     if !reported_port {
+                        if let Some(token) = parse_session_line(&text) {
+                            session_token = Some(token);
+                            continue;
+                        }
                         if let Some(port) = parse_port_line(&text) {
                             reported_port = true;
-                            let _ = tx.send(Ok(port));
+                            let _ = tx.send(Ok((port, session_token.clone())));
                         }
                     }
                     // Continue draining subsequent lines (status, access logs, …).
@@ -379,13 +456,13 @@ fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
             }
         }
         if !reported_port {
-            let _ = tx.send(Err("stdout closed before XUANJI_PORT".into()));
+            let _ = tx.send(Err("Coordinator 未上报端口便关闭了输出流".into()));
         }
     });
 
     loop {
         match rx.recv_timeout(Duration::from_millis(50)) {
-            Ok(Ok(port)) => return Ok(port),
+            Ok(Ok(runtime)) => return Ok(runtime),
             Ok(Err(msg)) => {
                 let detail = match child.try_wait() {
                     Ok(Some(status)) => format!("{msg}; exit={status}"),
@@ -401,13 +478,13 @@ fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
                 }
                 if let Ok(Some(status)) = child.try_wait() {
                     return Err(CoordinatorError::EarlyExit(format!(
-                        "process exited with {status}"
+                        "Coordinator 进程已退出（状态：{status}）"
                     )));
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 return Err(CoordinatorError::EarlyExit(
-                    "port reader disconnected".into(),
+                    "Coordinator 端口读取器已断开".into(),
                 ));
             }
         }
@@ -446,9 +523,7 @@ fn drain_pipe_lines<R: std::io::Read>(
 }
 
 fn pipe_tail(tail: &Arc<Mutex<String>>) -> String {
-    tail.lock()
-        .map(|g| g.clone())
-        .unwrap_or_default()
+    tail.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
 fn enrich_process_error(err: CoordinatorError, detail: String) -> CoordinatorError {
@@ -459,11 +534,11 @@ fn enrich_process_error(err: CoordinatorError, detail: String) -> CoordinatorErr
         CoordinatorError::EarlyExit(msg) => {
             CoordinatorError::EarlyExit(format!("{msg}; stderr={detail}"))
         }
-        CoordinatorError::HealthTimeout => {
-            CoordinatorError::HealthFailed(format!("timed out waiting for coordinator health; stderr={detail}"))
-        }
+        CoordinatorError::HealthTimeout => CoordinatorError::HealthFailed(format!(
+            "等待 Coordinator 健康检查超时；错误输出={detail}"
+        )),
         CoordinatorError::PortTimeout => {
-            CoordinatorError::EarlyExit(format!("timed out waiting for coordinator port; stderr={detail}"))
+            CoordinatorError::EarlyExit(format!("等待 Coordinator 端口超时；错误输出={detail}"))
         }
         other => other,
     }
@@ -475,10 +550,15 @@ fn parse_port_line(line: &str) -> Option<u16> {
     value.parse().ok()
 }
 
+fn parse_session_line(line: &str) -> Option<String> {
+    let value = line.trim().strip_prefix(SESSION_LINE_PREFIX)?;
+    (!value.is_empty()).then(|| value.to_string())
+}
+
 fn wait_for_health(host: &str, port: u16, timeout: Duration) -> Result<(), CoordinatorError> {
     let deadline = Instant::now() + timeout;
     let url_host = host;
-    let mut _last_err = String::from("not attempted");
+    let mut _last_err = String::from("尚未尝试");
 
     while Instant::now() < deadline {
         match http_get_status(url_host, port) {
@@ -497,7 +577,7 @@ fn wait_for_health(host: &str, port: u16, timeout: Duration) -> Result<(), Coord
 fn http_get_status(host: &str, port: u16) -> Result<u16, String> {
     let addr: SocketAddr = format!("{host}:{port}")
         .parse()
-        .map_err(|e| format!("bad addr: {e}"))?;
+        .map_err(|_| "Coordinator 地址格式无效".to_string())?;
     let mut stream =
         TcpStream::connect_timeout(&addr, Duration::from_millis(500)).map_err(|e| e.to_string())?;
     stream
@@ -507,9 +587,8 @@ fn http_get_status(host: &str, port: u16) -> Result<u16, String> {
         .set_write_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
 
-    let request = format!(
-        "GET {HEALTH_PATH} HTTP/1.0\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET {HEALTH_PATH} HTTP/1.0\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
     use std::io::Write;
     stream
         .write_all(request.as_bytes())
@@ -522,10 +601,12 @@ fn http_get_status(host: &str, port: u16) -> Result<u16, String> {
         .map_err(|e| e.to_string())?;
     // HTTP/1.x 200 OK
     let mut parts = status_line.split_whitespace();
-    let _version = parts.next().ok_or_else(|| "empty response".to_string())?;
+    let _version = parts
+        .next()
+        .ok_or_else(|| "Coordinator 返回了空响应".to_string())?;
     let code = parts
         .next()
-        .ok_or_else(|| format!("bad status line: {status_line}"))?
+        .ok_or_else(|| format!("Coordinator 状态行无效：{status_line}"))?
         .parse::<u16>()
         .map_err(|e| e.to_string())?;
     Ok(code)
@@ -548,9 +629,7 @@ pub fn resolve_sidecar_path(resource_dir: &Path) -> PathBuf {
     {
         let candidates = [
             resource_dir.join("xuanji-coordinator"),
-            resource_dir
-                .join("../MacOS")
-                .join("xuanji-coordinator"),
+            resource_dir.join("../MacOS").join("xuanji-coordinator"),
             resource_dir.join("bin").join("xuanji-coordinator"),
         ];
         for candidate in candidates {
@@ -563,10 +642,7 @@ pub fn resolve_sidecar_path(resource_dir: &Path) -> PathBuf {
 }
 
 /// Build start options for production (sidecar only — never source Python).
-pub fn production_start_options(
-    sidecar: PathBuf,
-    data_dir: PathBuf,
-) -> StartOptions {
+pub fn production_start_options(sidecar: PathBuf, data_dir: PathBuf) -> StartOptions {
     StartOptions {
         binary: sidecar,
         data_dir,
@@ -830,17 +906,29 @@ except KeyboardInterrupt:
         assert!(stopped.port.is_none());
 
         // Restart after stop works.
-        let again = supervisor
-            .start(StartOptions {
-                binary,
-                data_dir: dir,
-                allow_any_binary: true,
-                health_timeout: Duration::from_secs(5),
-                port_timeout: Duration::from_secs(5),
-                ..StartOptions::default()
-            })
-            .expect("restart");
+        let restart_options = StartOptions {
+            binary,
+            data_dir: dir,
+            allow_any_binary: true,
+            health_timeout: Duration::from_secs(5),
+            port_timeout: Duration::from_secs(5),
+            ..StartOptions::default()
+        };
+        let again = supervisor.start(restart_options.clone()).expect("restart");
         assert_eq!(again.status, RuntimeStatus::Healthy);
+
+        // A crashed sidecar is detected and replaced without user input.
+        let old_pid = again.pid.expect("running pid");
+        send_sigterm(old_pid).expect("terminate fake sidecar");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while supervisor.status().status == RuntimeStatus::Healthy && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let recovered = supervisor
+            .recover_if_needed(&restart_options, 1)
+            .expect("automatic recovery");
+        assert_eq!(recovered.status, RuntimeStatus::Healthy);
+        assert_ne!(recovered.pid, Some(old_pid));
         let _ = supervisor.stop();
     }
 

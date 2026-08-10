@@ -23,11 +23,11 @@ pub struct TunnelRecord {
 #[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum TunnelError {
-    #[error("tunnel owner already registered: {0}")]
+    #[error("该任务的 SSH 隧道已经存在：{0}")]
     AlreadyOpen(String),
-    #[error("tunnel owner not found: {0}")]
+    #[error("未找到该任务的 SSH 隧道：{0}")]
     NotFound(String),
-    #[error("io error: {0}")]
+    #[error("SSH 隧道进程操作失败")]
     Io(String),
 }
 
