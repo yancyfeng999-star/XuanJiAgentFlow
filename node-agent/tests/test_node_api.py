@@ -84,6 +84,61 @@ def test_task_creates_and_completes(tmp_path: Path) -> None:
     assert client.get("/v1/tasks/t1").json()["status"] == "success"
 
 
+def test_staged_input_is_verified_before_start_and_reaches_hermes_output(tmp_path: Path) -> None:
+    app, fake = make_app(tmp_path)
+    client = TestClient(app)
+    marker = b"UPSTREAM-MARKER-7f31"
+    digest = hashlib.sha256(marker).hexdigest()
+    dispatch = {
+        "idempotency_key": "run-1:report:1",
+        "instruction": "Write the final report without inventing evidence.",
+        "project_id": "project-1",
+        "run_id": "run-1",
+        "task_id": "report",
+        "inputs": [{
+            "source_task_id": "research",
+            "path": "research/result.md",
+            "size": len(marker),
+            "sha256": digest,
+        }],
+        "output_policy": {"mode": "strict", "expected": ["report.md"]},
+    }
+
+    created = client.post("/v1/tasks", json=dispatch)
+    assert created.status_code == 202
+    assert created.json()["status"] == "queued"
+    missing = client.post("/v1/tasks/run-1:report:1/start")
+    assert missing.json()["status"] == "failed"
+    assert "输入文件缺失" in missing.json()["error"]
+
+    dispatch["idempotency_key"] = "run-1:report:2"
+    created = client.post("/v1/tasks", json=dispatch)
+    assert created.json()["status"] == "queued"
+    uploaded = client.put(
+        "/v1/tasks/run-1:report:2/inputs/research/result.md",
+        content=marker,
+        headers={"X-Input-Size": str(len(marker)), "X-Input-SHA256": digest},
+    )
+    assert uploaded.status_code == 200
+    started = client.post("/v1/tasks/run-1:report:2/start")
+    assert started.json()["status"] == "running"
+    assert marker.decode() in fake.runs["run-1:report:2"]["output"]
+
+    completed = client.get("/v1/tasks/run-1:report:2")
+    assert completed.json()["status"] == "success"
+    artifact = client.get("/v1/tasks/run-1:report:2/artifacts").json()["artifacts"][0]
+    assert artifact["path"] == "report.md"
+    downloaded = client.get("/v1/tasks/run-1:report:2/artifacts/report.md")
+    assert marker in downloaded.content
+    events = client.get("/v1/tasks/run-1:report:2/logs").json()["events"]
+    assert [event["event"] for event in events] == [
+        "task_created",
+        "input_uploaded",
+        "hermes_started",
+        "task_succeeded",
+    ]
+
+
 def test_task_creation_is_idempotent_without_restarting_hermes(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
     client = TestClient(app)
@@ -196,7 +251,7 @@ def test_cancel_communication_failure_is_persisted_as_cancel_failed(tmp_path: Pa
 
     assert response.status_code == 200
     assert response.json()["status"] == "cancel_failed"
-    assert "Hermes unavailable" in response.json()["error"]
+    assert response.json()["error"] == "取消 Hermes 任务失败"
     assert client.get("/v1/tasks/cancel-error").json()["status"] == "cancel_failed"
 
 
@@ -224,7 +279,7 @@ def test_cancelling_task_poll_reconciles_terminal_hermes_status(
     if expected_status == "cancelled":
         assert reconciled.json()["error"] is None
     else:
-        assert reconciled.json()["error"] == "Hermes cancellation failed"
+        assert reconciled.json()["error"] == "Hermes 任务执行失败"
 
 
 def test_cancelling_task_poll_failure_becomes_cancel_failed(tmp_path: Path) -> None:
@@ -239,7 +294,7 @@ def test_cancelling_task_poll_failure_becomes_cancel_failed(tmp_path: Path) -> N
     reconciled = client.get("/v1/tasks/cancel-poll-error")
 
     assert reconciled.json()["status"] == "cancel_failed"
-    assert "Hermes unavailable" in reconciled.json()["error"]
+    assert reconciled.json()["error"] == "取消状态同步失败"
 
 
 def test_artifact_list_matches_node_client_protocol_and_download_streams(tmp_path: Path) -> None:
