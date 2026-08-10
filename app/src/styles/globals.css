@@ -1,58 +1,67 @@
 :root {
-  /* Primary */
-  --primary: #6366F1;
-  --primary-hover: #4F46E5;
-  --primary-light: #EEF2FF;
+  /* 朱砂（主行动色） */
+  --primary: #B53A2C;
+  --primary-hover: #9A2F22;
+  --primary-light: #F9ECE6;
 
-  /* Neutral */
-  --bg: #F8F9FC;
-  --surface: #FFFFFF;
-  --border: #E5E7EB;
-  --border-light: #F3F4F6;
-  --text-primary: #111827;
-  --text-secondary: #6B7280;
-  --text-tertiary: #9CA3AF;
+  /* 星金（品牌点缀） */
+  --gold: #A8842C;
+  --gold-soft: #C9A75A;
+  --gold-deep: #7A5F18;
+  --gold-light: #F6EEDC;
 
-  /* Agent colors */
-  --research: #10B981;
-  --research-bg: #ECFDF5;
-  --code: #3B82F6;
-  --code-bg: #EFF6FF;
-  --business: #F59E0B;
-  --business-bg: #FFFBEB;
-  --review: #8B5CF6;
-  --review-bg: #F5F3FF;
+  /* 宣纸中性色 */
+  --bg: #F5F1E7;
+  --surface: #FDFBF4;
+  --border: #E2DAC5;
+  --border-light: #EDE7D6;
+  --text-primary: #242119;
+  --text-secondary: #6E6656;
+  --text-tertiary: #736A52;
 
-  /* Status */
-  --success: #10B981;
-  --success-bg: #ECFDF5;
-  --running: #3B82F6;
-  --running-bg: #EFF6FF;
-  --pending: #9CA3AF;
-  --pending-bg: #F3F4F6;
-  --failed: #EF4444;
-  --failed-bg: #FEF2F2;
-  --paused: #F59E0B;
-  --paused-bg: #FFFBEB;
+  /* 任务类型 */
+  --research: #366A50;
+  --research-bg: #EAF1EB;
+  --code: #3D5E80;
+  --code-bg: #EBF0F5;
+  --business: #A96F1F;
+  --business-bg: #F7EDDA;
+  --review: #75517E;
+  --review-bg: #F2ECF3;
 
-  /* Sidebar */
-  --sidebar-bg: #1E1B4B;
-  --sidebar-text: #C7D2FE;
-  --sidebar-active: rgba(99, 102, 241, 0.3);
+  /* 状态 */
+  --success: #366A50;
+  --success-bg: #EAF1EB;
+  --running: #3D5E80;
+  --running-bg: #EBF0F5;
+  --pending: #A79D89;
+  --pending-bg: #F0EBDC;
+  --failed: #B53A2C;
+  --failed-bg: #F9ECE6;
+  --paused: #A96F1F;
+  --paused-bg: #F7EDDA;
+
+  /* 玄色侧栏 */
+  --sidebar-bg: #171A21;
+  --sidebar-surface: #20242E;
+  --sidebar-border: #2A2F3B;
+  --sidebar-text: #A8A293;
+  --sidebar-active: rgba(201, 167, 90, 0.14);
 
   /* Radius */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
 
-  /* Shadow */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.12);
+  /* 暖色阴影 */
+  --shadow-sm: 0 1px 2px rgba(58, 48, 32, 0.06);
+  --shadow-md: 0 4px 14px rgba(58, 48, 32, 0.08);
+  --shadow-lg: 0 14px 34px rgba(58, 48, 32, 0.14);
 
   /* Font */
-  --font-sans: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Songti SC', 'STSong', 'Noto Serif SC', 'SimSun', serif;
+  --font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * {
@@ -75,9 +84,15 @@ body {
   height: 100vh;
 }
 
+::selection {
+  background: var(--gold-light);
+  color: var(--text-primary);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
