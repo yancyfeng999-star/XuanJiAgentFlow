@@ -55,11 +55,15 @@ echo "=== 3. Frontend tests ==="
 (cd "$APP_DIR" && npm test)
 
 echo
-echo "=== 4. Frontend lint ==="
+echo "=== 4. Frontend production dependency audit ==="
+(cd "$APP_DIR" && npm audit --omit=dev --audit-level=high)
+
+echo
+echo "=== 5. Frontend lint ==="
 (cd "$APP_DIR" && npm run lint)
 
 echo
-echo "=== 5. Frontend build ==="
+echo "=== 6. Frontend build ==="
 # Host may block bulk deletes under dist/; rename away so Vite can create a fresh outDir.
 mkdir -p "$ROOT/.tmp-build-backups"
 if [[ -d "$APP_DIR/dist" ]]; then
@@ -72,7 +76,7 @@ if [[ "$SKIP_E2E" == false ]]; then
   if [[ -f "$APP_DIR/playwright.config.ts" || -f "$APP_DIR/playwright.config.js" || \
         -f "$APP_DIR/playwright.config.mts" || -f "$APP_DIR/playwright.config.mjs" || \
         -f "$APP_DIR/playwright.config.cts" || -f "$APP_DIR/playwright.config.cjs" ]]; then
-    echo "=== 6. Frontend E2E tests (web+backend Fake multi-node stack) ==="
+    echo "=== 7. Frontend E2E tests (web+backend Fake multi-node stack) ==="
     # Ensure Chromium is available; reuses install if present.
     (cd "$APP_DIR" && npx playwright install chromium)
     # Avoid bulk-delete guards on previous Playwright artifacts.
@@ -95,27 +99,27 @@ if [[ "$SKIP_E2E" == false ]]; then
   fi
 else
   echo
-  echo "=== 6. Frontend E2E tests === SKIPPED (--skip-e2e)"
+  echo "=== 7. Frontend E2E tests === SKIPPED (--skip-e2e)"
 fi
 
 echo
-echo "=== 7. Python compilation check ==="
+echo "=== 8. Python compilation check ==="
 "$PY" -m compileall -q \
   "$BACKEND_DIR/src" "$BACKEND_DIR/tests" \
   "$NODE_AGENT_DIR/app.py" "$NODE_AGENT_DIR/executor.py" "$NODE_AGENT_DIR/tests" \
   "$ROOT/scripts/e2e_stack.py"
 
 echo
-echo "=== 8. Cargo tests ==="
+echo "=== 9. Cargo tests ==="
 cargo test --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
 
 echo
-echo "=== 9. Cargo check ==="
+echo "=== 10. Cargo check ==="
 cargo check --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
 
 if [[ "$SKIP_TAURI_BUILD" == false ]]; then
   echo
-  echo "=== 10. Tauri production build (unsigned macOS .app if possible) ==="
+  echo "=== 11. Tauri production build (unsigned macOS .app if possible) ==="
   (cd "$APP_DIR" && npm run build:tauri) || {
     echo "Tauri build failed. Falling back to cargo release + frontend dist only." >&2
     cargo build --release --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
@@ -125,7 +129,7 @@ if [[ "$SKIP_TAURI_BUILD" == false ]]; then
   }
 else
   echo
-  echo "=== 10. Tauri build === SKIPPED (--skip-tauri-build)"
+  echo "=== 11. Tauri build === SKIPPED (--skip-tauri-build)"
   echo "Still running cargo release build for binary verification..."
   cargo build --release --manifest-path "$APP_DIR/src-tauri/Cargo.toml" || true
 fi

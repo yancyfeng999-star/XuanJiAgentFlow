@@ -75,6 +75,7 @@ export async function apiStart(request: APIRequestContext, runId: string) {
 
 export async function ensureWorkspaceReady(page: Page) {
   await page.goto('/');
+  await expect(page).toHaveTitle('璇玑智能任务协作');
   await expect(page.getByText('璇玑')).toBeVisible({ timeout: 20_000 });
   // Boot should finish: either workspace rail or (rarely) boot error.
   await expect(page.getByLabel('项目资源栏')).toBeVisible({ timeout: 20_000 });

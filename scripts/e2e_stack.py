@@ -100,22 +100,22 @@ def main(argv: list[str] | None = None) -> int:
                     Task(
                         id="research",
                         workflow_id=workflow_id,
-                        title="Research",
-                        prompt=f"{goal}\n{context}",
+                        title="资料研究",
+                        prompt=f"围绕以下目标收集并核实资料：{goal}\n补充背景：{context}",
                         ui_position={"x": 80, "y": 80},
                     ),
                     Task(
                         id="analyze",
                         workflow_id=workflow_id,
-                        title="Analyze",
-                        prompt=f"Analyze inputs for: {goal}",
+                        title="分析整理",
+                        prompt=f"分析已核实的输入资料并提炼与目标相关的结论：{goal}",
                         ui_position={"x": 80, "y": 240},
                     ),
                     Task(
                         id="write",
                         workflow_id=workflow_id,
-                        title="Write",
-                        prompt="Write the verified result",
+                        title="撰写报告",
+                        prompt="根据已核实的资料和分析结论撰写最终报告。",
                         dependencies=["research", "analyze"],
                         ui_position={"x": 360, "y": 160},
                     ),
@@ -188,23 +188,6 @@ def main(argv: list[str] | None = None) -> int:
     wait_http(f"{coordinator_url}/api/status")
 
     with httpx.Client(base_url=coordinator_url, timeout=5.0) as client:
-        status = client.get("/api/security/status").json()["status"]
-        if status == "uninitialized":
-            assert (
-                client.post(
-                    "/api/security/initialize",
-                    json={"password": "e2e-master-password"},
-                ).status_code
-                == 201
-            )
-        elif status == "locked":
-            assert (
-                client.post(
-                    "/api/security/unlock",
-                    json={"password": "e2e-master-password"},
-                ).status_code
-                == 200
-            )
         for node_id, base_url in node_urls.items():
             payload = {
                 "id": node_id,
@@ -243,7 +226,6 @@ def main(argv: list[str] | None = None) -> int:
         "coordinator_url": coordinator_url,
         "data_dir": str(data_dir),
         "nodes": node_urls,
-        "password": "e2e-master-password",
         "node_tokens": tokens,
         "fakes_pid": os_getpid(),
     }
