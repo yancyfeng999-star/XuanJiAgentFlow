@@ -2,13 +2,15 @@
 
 ## Coordinator 无法启动
 
-**症状：** UI 显示「Coordinator 未能就绪」或 `timed out waiting for coordinator`。
+**症状：** UI 显示「Coordinator 未能就绪」或「等待 Coordinator 就绪超时」。
+
+桌面壳会每 2 秒检查一次 Coordinator；进程退出会自动拉起，连续 3 次健康检查失败会重启。下列检查仅用于自动恢复仍失败的情况：
 
 检查：
 
 1. 端口占用：换 `--port` 或确认 sidecar 打印的 `XUANJI_PORT=…`。
 2. 依赖：`.venv/bin/python -m xuanji --help` 是否可运行；缺少 uvicorn 时安装 `uvicorn[standard]`。
-3. data-dir 权限：路径需可写（SQLite、vault、projects）。
+3. data-dir 权限：路径需可写（SQLite、`credentials.json`、projects）。
 4. Tauri sidecar：`app/src-tauri/binaries/xuanji-coordinator*` 是否可执行。  
    开发包装脚本需能找到仓库 `.venv` 或 `XUANJI_PYTHON`。
 
@@ -16,11 +18,18 @@
 
 | 错误码 | 含义 | 处理 |
 |---|---|---|
-| `planner_not_configured` | 未配置 Planner | 设置 → 解锁保险库 → 保存 base_url/model/key |
-| `vault_locked` / 423 | 保险库锁定 | 输入主密码解锁 |
+| `planner_not_configured` | 未配置 Planner | 设置 → 保存 base_url/model/key |
+| `planner_credentials_missing` | 未配置 API Key | 在设置中重新填写并保存 API Key |
 | `planner_invalid_output` | 模型输出无法校验 | 检查模型；系统最多自动修复一次 |
 
 E2E MockPlanner 仅在 `scripts/e2e_stack.py` 中注入，生产路径不会静默成功。
+
+## 中文错误规范
+
+- 界面、Coordinator API 与 Node Agent API 的用户可读错误统一使用中文。
+- `planner_not_configured` 等英文标识是稳定错误码，仅用于日志、测试和技术排障，不作为界面提示。
+- 上游 Planner、Hermes、SSH 或操作系统返回英文异常时，展示层会替换为对应的中文安全提示，避免泄露凭据或内部诊断文本。
+- 未识别的错误统一显示「操作失败（错误码：…）」；排障时请同时记录错误码。
 
 ## 审核 / 编辑
 

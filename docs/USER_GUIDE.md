@@ -26,7 +26,7 @@ cd app && npm ci
 .venv/bin/python -m xuanji --port 8000 --data-dir ~/.xuanji-dev
 ```
 
-健康检查：`GET http://127.0.0.1:8000/api/status` → `{"status":"ok","version":"2.0.0"}`。
+健康检查：`GET http://127.0.0.1:8000/api/status` → `{"status":"ok","version":"3.0.0"}`。
 
 ### 3. 前端（浏览器模式）
 
@@ -44,14 +44,14 @@ cd app
 npm run tauri dev
 ```
 
-壳负责监督 sidecar、健康检查通过后再加载工作区。
+壳负责启动并监督 sidecar、健康检查通过后再加载工作区。协调器地址由应用内部管理，不在设置页显示；进程退出或连续健康检查失败时会自动重启并重新连接。
 
 ## 工作流（UI）
 
 1. **创建项目**：左侧「新项目」输入名称（可选本地目录）。
-2. **规划**：在画布输入目标 →「生成规划」。Planner 需在「设置」配置 base_url / model / API Key，并先初始化主密码解锁保险库。  
+2. **规划**：在画布输入目标 →「生成规划」。Planner 需在「设置」配置 base_url / model / API Key。
    - E2E / 测试栈会注入 MockPlanner，无需真实 Key。
-3. **编辑**：点击任务节点，修改标题 / 描述 / Prompt，保存。审核后冻结。
+3. **编辑**：点击任务节点，修改标题、描述、Prompt、调度模式、节点/能力约束、超时、重试和预期产出，保存。拖动画布节点时位置会持久化。审核后全部冻结。
 4. **审核**：「审核工作流」→ 状态变为已审核，编辑禁用。
 5. **节点**：在「Hermes 节点」登记本机/远程 API 地址与 Token（Token 只写不回读）。
 6. **执行**：「执行全部」。观察顶部进度、任务状态、WebSocket「实时已连接」。
@@ -60,18 +60,19 @@ npm run tauri dev
 
 ## 从 DMG 安装（未签名）
 
-1. 打开 `璇玑_0.1.0_aarch64.dmg`
+1. 打开 `璇玑_0.3.0_aarch64.dmg`
 2. 将「璇玑.app」拖到 `Applications`
 3. 首次打开若被拦截：系统设置 → 隐私与安全性 → 仍要打开
 4. 启动后：
-   - 在「设置」初始化主密码并解锁
-   - 填写 Planner Base URL / 模型 / API Key
+   - Coordinator 随应用自动启动、健康检查和故障恢复，不需要填写本机服务地址
+   - 在「设置」填写 Planner Base URL / 模型 / API Key
    - 在「Hermes 节点」填写节点地址、Token；远程节点再填 SSH 主机、用户、私钥路径
-5. **不需要**在安装前把服务器写进安装包；全部由界面保存到本地加密 vault。
+5. **不需要**在安装前把服务器写进安装包；全部由界面保存到本地配置。
 
 ## 安全
 
-- 主密码派生密钥，凭据写入本地 vault（非明文）。
+- Planner Key 与 Node Token 写入应用数据目录的 `credentials.json`，文件权限为 `0600`，API 只返回是否已配置，不回传密钥。该文件未加密，请仅在可信的本机账户中使用。
+- 桌面壳每次启动生成随机会话 token；除健康检查外，本地 HTTP、WebSocket 和产物下载均需该 token。
 - SSH 私钥**只存路径**，不复制进应用。
 - 远程 Node 经 SSH 隧道访问回环端口；不使用 `StrictHostKeyChecking=no`。
 
@@ -81,7 +82,7 @@ npm run tauri dev
 bash scripts/verify-all.sh
 ```
 
-E2E 覆盖规划→编辑→审核→Fake 多节点执行→产物，以及取消 / 控制面 / 离线节点 / WS 回放。
+E2E 覆盖规划→编辑→审核→Fake 多节点执行→产物，以及取消 / 控制面 / 离线节点 / WS 回放；真实 Node Agent 集成测试覆盖 Hermes 轮询、阶段输入校验和下游依赖传递。
 
 ## 未包含（外部验收）
 

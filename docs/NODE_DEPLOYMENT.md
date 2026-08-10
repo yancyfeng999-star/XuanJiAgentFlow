@@ -17,7 +17,7 @@
    - kind：本机（不填 SSH Host）
    - api_url：例如 `http://127.0.0.1:8642`
    - Token：节点共享密钥
-3. 诊断接口 `POST /api/nodes/{id}/diagnose` 会在 vault 解锁时检查健康。
+3. 诊断接口 `POST /api/nodes/{id}/diagnose` 会使用已保存的节点凭据检查健康。
 
 ## 远程节点（Ubuntu/Debian）
 
@@ -35,8 +35,10 @@
 `POST /api/nodes/{id}/provision` → `ProvisioningService.provision_remote`：
 
 1. SSH 连通性
-2. 检测/安装 Node Agent 与 systemd unit（实现以源码为准）
-3. 验证 API 是否在远端 `127.0.0.1:port` 在线
+2. 打包并上传 Node Agent 源码与 Python 运行依赖
+3. 安装 `xuanji-node-agent.service`，Node Agent 默认监听远端 `127.0.0.1:8765`
+4. Hermes 执行 API 保持监听 `127.0.0.1:8642`
+5. 通过 SSH 隧道验证 Node Agent `/health`，并把诊断状态、能力和 `last_seen` 持久化
 
 **注意：** 失败不得 stub 成功；步骤结果以 JSON `steps[]` 返回。
 
