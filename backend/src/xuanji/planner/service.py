@@ -24,29 +24,29 @@ class PlannerService:
         context: str,
         constraints: dict[str, Any],
     ) -> Workflow:
-        messages = planning_messages(goal, context, constraints)
+        messages = planning_messages(goal, context, constraints, Workflow.model_json_schema())
         output = await self._provider.complete(messages, self._model)
 
         for attempt in range(2):
             try:
                 return self._workflow(output, project_id, goal)
-            except (json.JSONDecodeError, ValidationError, TypeError):
+            except (json.JSONDecodeError, ValidationError, TypeError) as error:
                 if attempt == 1:
                     raise PlannerError(
                         "planner_invalid_output",
-                        "planner output is invalid after repair",
+                        "规划器返回的工作流格式无效，自动修复后仍未通过校验",
                     ) from None
                 output = await self._provider.complete(
-                    repair_messages(messages, output),
+                    repair_messages(messages, output, str(error)),
                     self._model,
                 )
 
-        raise AssertionError("unreachable")
+        raise AssertionError("程序进入了不可达分支")
 
     def _workflow(self, output: str, project_id: str, goal: str) -> Workflow:
         payload = json.loads(_strip_code_fence(output))
         if not isinstance(payload, dict):
-            raise TypeError("planner output must be a JSON object")
+            raise TypeError("规划器返回内容必须是数据对象")
         payload["project_id"] = project_id
         payload["goal"] = goal
         payload["planner_provider"] = self._provider_name

@@ -5,6 +5,7 @@ import json
 import sqlite3
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ import pytest
 from tests.fakes.fake_node import FakeNode, FakeNodeMode
 from xuanji.artifacts.manager import ArtifactManager
 from xuanji.domain.enums import NodeKind, NodeStatus, RunStatus, TaskStatus, WorkflowStatus
-from xuanji.domain.models import Artifact, HermesNode, Project, Run, Task, TaskAttempt, Workflow
+from xuanji.domain.models import Artifact, ExecutionPolicy, HermesNode, Project, RetryPolicy, Run, Task, TaskAttempt, Workflow
 from xuanji.execution.manager import ExecutionManager
 from xuanji.execution.recovery import RecoveryService
 from xuanji.nodes import NodeClient
@@ -105,13 +106,20 @@ async def make_harness(
     )
 
 
-def task(task_id: str, *, dependencies: list[str] | None = None) -> Task:
+def task(
+    task_id: str,
+    *,
+    dependencies: list[str] | None = None,
+    max_attempts: int = 1,
+    delay_seconds: float = 0,
+) -> Task:
     return Task(
         id=task_id,
         workflow_id="workflow-1",
         title=task_id,
         prompt=f"Complete {task_id}",
         dependencies=dependencies or [],
+        retry_policy=RetryPolicy(max_attempts=max_attempts, delay_seconds=delay_seconds),
     )
 
 
@@ -146,6 +154,29 @@ async def test_parallel_nodes_persist_attempts_events_artifacts_and_delivery_man
 
 
 @pytest.mark.asyncio
+async def test_dependency_artifact_content_is_staged_as_downstream_input(tmp_path: Path) -> None:
+    async with AsyncExitStack() as stack:
+        harness = await make_harness(
+            tmp_path,
+            stack,
+            [FakeNodeMode.SUCCESS],
+            [task("research"), task("report", dependencies=["research"])],
+        )
+
+        await harness.manager.start("run-1")
+        await harness.manager.reconcile("run-1")
+        assert harness.runs.latest_attempts("run-1")["report"].status is TaskStatus.RUNNING
+        await harness.manager.reconcile("run-1")
+
+        report = harness.project_root / "runs" / "run-1" / "tasks" / "report" / "artifacts" / "result.txt"
+        content = report.read_text(encoding="utf-8")
+        assert "result for Complete research" in content
+        assert "result for Complete report" in content
+        staged = harness.fakes["node-1"].root / "run-1:report:1" / "inputs" / "research" / "result.txt"
+        assert staged.read_text(encoding="utf-8") == "result for Complete research"
+
+
+@pytest.mark.asyncio
 async def test_capacity_waits_without_blocking_and_dispatches_on_next_step(tmp_path: Path) -> None:
     async with AsyncExitStack() as stack:
         harness = await make_harness(tmp_path, stack, [FakeNodeMode.SUCCESS], [task("one"), task("two")])
@@ -164,13 +195,18 @@ async def test_capacity_waits_without_blocking_and_dispatches_on_next_step(tmp_p
 @pytest.mark.asyncio
 async def test_failed_task_can_retry_with_incremented_dispatch_key(tmp_path: Path) -> None:
     async with AsyncExitStack() as stack:
-        harness = await make_harness(tmp_path, stack, [FakeNodeMode.FAILURE], [task("one")])
+        harness = await make_harness(
+            tmp_path,
+            stack,
+            [FakeNodeMode.FAILURE],
+            [task("one", max_attempts=2, delay_seconds=60)],
+        )
         fake = harness.fakes["node-1"]
 
         await harness.manager.start("run-1")
         await harness.manager.reconcile("run-1")
         assert harness.runs.latest_attempts("run-1")["one"].status is TaskStatus.FAILED
-        assert harness.runs.get("run-1").status is RunStatus.BLOCKED
+        assert harness.runs.get("run-1").status is RunStatus.RUNNING
 
         fake.mode = FakeNodeMode.SUCCESS
         retried = await harness.manager.retry_task("run-1", "one")
@@ -180,6 +216,53 @@ async def test_failed_task_can_retry_with_incremented_dispatch_key(tmp_path: Pat
 
         await harness.manager.reconcile("run-1")
         assert harness.runs.get("run-1").status is RunStatus.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_failed_task_retries_automatically_after_configured_delay(tmp_path: Path) -> None:
+    async with AsyncExitStack() as stack:
+        harness = await make_harness(
+            tmp_path,
+            stack,
+            [FakeNodeMode.FAILURE],
+            [task("one", max_attempts=2, delay_seconds=0)],
+        )
+        fake = harness.fakes["node-1"]
+
+        await harness.manager.start("run-1")
+        await harness.manager.reconcile("run-1")
+        assert harness.runs.get("run-1").status is RunStatus.RUNNING
+        latest = harness.runs.latest_attempts("run-1")["one"]
+        assert latest.attempt == 2
+        assert latest.status is TaskStatus.RUNNING
+        fake.mode = FakeNodeMode.SUCCESS
+        await harness.manager.reconcile("run-1")
+        assert harness.runs.get("run-1").status is RunStatus.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_running_task_timeout_cancels_remote_and_becomes_failed(tmp_path: Path) -> None:
+    timed = task("one")
+    timed.execution_policy = ExecutionPolicy(timeout_seconds=1)
+    async with AsyncExitStack() as stack:
+        harness = await make_harness(
+            tmp_path,
+            stack,
+            [FakeNodeMode.DELAY],
+            [timed],
+            delay_polls=100,
+        )
+        await harness.manager.start("run-1")
+        attempt = harness.runs.latest_attempts("run-1")["one"]
+        attempt.started_at = attempt.started_at - timedelta(seconds=2)
+        harness.runs.update_attempt(attempt)
+
+        await harness.manager.reconcile("run-1")
+
+        failed = harness.runs.latest_attempts("run-1")["one"]
+        assert failed.status is TaskStatus.FAILED
+        assert failed.error["code"] == "task_timeout"
+        assert harness.fakes["node-1"].cancel_calls == 1
 
 
 @pytest.mark.asyncio
@@ -224,7 +307,7 @@ async def test_offline_dispatch_is_persisted_as_blocked(tmp_path: Path) -> None:
 
         attempt = harness.runs.latest_attempts("run-1")["one"]
         assert attempt.status is TaskStatus.BLOCKED
-        assert attempt.error == {"code": "node_connection_error", "message": "node connection failed"}
+        assert attempt.error == {"code": "node_connection_error", "message": "无法连接执行节点"}
         assert harness.runs.get("run-1").status is RunStatus.BLOCKED
 
 
@@ -444,13 +527,13 @@ async def test_dispatch_and_reconcile_independent_attempts_concurrently(tmp_path
         both_entered = asyncio.Event()
         release = asyncio.Event()
 
-        async def concurrent_create(goal: str, idempotency_key: str):
+        async def concurrent_create(dispatch):
             nonlocal entered
             entered += 1
             if entered == 2:
                 both_entered.set()
             await release.wait()
-            return await original_creates[idempotency_key.split(":")[1]](goal, idempotency_key)
+            return await original_creates[dispatch.task_id](dispatch)
 
         original_creates = {
             "one": harness.manager.node_clients["node-1"].create_task,

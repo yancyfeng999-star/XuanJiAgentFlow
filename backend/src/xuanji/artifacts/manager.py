@@ -39,7 +39,7 @@ class ArtifactManager:
             # Absolute paths may be user-selected directories outside the app data dir.
             root = root.resolve()
             if root in {Path("/"), Path.home().anchor}:
-                raise UnsafePathError("project root cannot be a filesystem root")
+                raise UnsafePathError("项目目录不能是文件系统根目录")
         root.mkdir(parents=True, exist_ok=True)
         for relative in ("workflow", "runs", "shared", "deliverables"):
             (root / relative).mkdir(exist_ok=True)
@@ -56,10 +56,10 @@ class ArtifactManager:
         normalized = raw.replace("\\", "/")
         candidate_parts = PurePath(normalized).parts
         if os.path.isabs(raw) or normalized.startswith("/") or ".." in candidate_parts:
-            raise UnsafePathError(f"unsafe project path: {raw}")
+            raise UnsafePathError(f"项目路径不安全：{raw}")
         candidate = (root / normalized).resolve()
         if candidate != root and root not in candidate.parents:
-            raise UnsafePathError(f"path escapes project root: {raw}")
+            raise UnsafePathError(f"路径超出项目目录范围：{raw}")
         return candidate
 
     def save_workflow(self, project_id: str, workflow: Workflow) -> Path:
@@ -95,11 +95,11 @@ class ArtifactManager:
         for name in artifact_names:
             normalized = name.replace("\\", "/")
             if PurePath(normalized).is_absolute() or ".." in PurePath(normalized).parts:
-                raise UnsafePathError(f"unsafe artifact path: {name}")
+                raise UnsafePathError(f"产物路径不安全：{name}")
             relative = f"runs/{run_id}/tasks/{task_id}/artifacts/{normalized}"
             path = self.resolve_project_path(project_id, relative)
             if not path.is_file():
-                raise ArtifactVerificationError(f"artifact is missing: {name}")
+                raise ArtifactVerificationError(f"产物缺失：{name}")
             entries.append(self._entry(task_id, relative, path))
         manifest = ArtifactManifest(run_id=run_id, task_id=task_id, artifacts=entries)
         self._atomic_json(
@@ -112,15 +112,15 @@ class ArtifactManager:
         for entry in manifest.artifacts:
             path = self.resolve_project_path(project_id, entry.path)
             if not path.is_file():
-                raise ArtifactVerificationError(f"artifact is missing: {entry.path}")
+                raise ArtifactVerificationError(f"产物缺失：{entry.path}")
             actual_size = path.stat().st_size
             if actual_size != entry.size:
                 raise ArtifactVerificationError(
-                    f"size mismatch for {entry.path}: expected {entry.size}, got {actual_size}"
+                    f"产物大小不匹配：{entry.path}，预期 {entry.size} 字节，实际 {actual_size} 字节"
                 )
             actual_hash = self._sha256(path)
             if actual_hash != entry.sha256:
-                raise ArtifactVerificationError(f"hash mismatch for {entry.path}")
+                raise ArtifactVerificationError(f"产物哈希不匹配：{entry.path}")
 
     async def download_verified_artifact(
         self,
@@ -141,14 +141,14 @@ class ArtifactManager:
         try:
             async with client.stream_artifact(remote_task_id, entry.path) as download:
                 if download.size != entry.size or download.sha256 != entry.sha256:
-                    raise ArtifactVerificationError(f"manifest and download headers disagree for {entry.path}")
+                    raise ArtifactVerificationError(f"产物清单与下载响应头不一致：{entry.path}")
                 with temporary.open("wb") as stream:
                     async for chunk in download.body:
                         stream.write(chunk)
                         received += len(chunk)
                         digest.update(chunk)
             if received != entry.size or digest.hexdigest() != entry.sha256:
-                raise ArtifactVerificationError(f"download hash mismatch for {entry.path}")
+                raise ArtifactVerificationError(f"下载产物哈希不匹配：{entry.path}")
             temporary.replace(path)
             return path
         except BaseException:
@@ -164,7 +164,7 @@ class ArtifactManager:
         self, project_id: str, attempt: TaskAttempt, manifest: ArtifactManifest
     ) -> None:
         if attempt.run_id != manifest.run_id or attempt.task_id != manifest.task_id:
-            raise ArtifactVerificationError("manifest does not belong to task attempt")
+            raise ArtifactVerificationError("产物清单不属于当前任务尝试")
         self.verify_manifest(project_id, manifest)
         ensure_task_transition(attempt.status, TaskStatus.SUCCESS)
         attempt.result_manifest = manifest.model_dump(mode="json")
@@ -175,7 +175,7 @@ class ArtifactManager:
         try:
             return self._project_paths[project_id]
         except KeyError as exc:
-            raise KeyError(f"unknown project: {project_id}") from exc
+            raise KeyError(f"项目不存在：{project_id}") from exc
 
     def _entry(self, task_id: str, relative: str, path: Path) -> ArtifactEntry:
         media_type = mimetypes.guess_type(path.name)[0]

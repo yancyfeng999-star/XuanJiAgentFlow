@@ -68,9 +68,9 @@ class Task(DomainModel):
     @classmethod
     def dependencies_are_unique(cls, value: list[str]) -> list[str]:
         if any(not dependency for dependency in value):
-            raise ValueError("dependency id cannot be empty")
+            raise ValueError("依赖任务 ID 不能为空")
         if len(value) != len(set(value)):
-            raise ValueError("duplicate dependency id")
+            raise ValueError("依赖任务 ID 重复")
         return value
 
 
@@ -90,16 +90,16 @@ class Workflow(DomainModel):
     def validate_graph(self) -> Workflow:
         ids = [task.id for task in self.tasks]
         if len(ids) != len(set(ids)):
-            raise ValueError("duplicate task id")
+            raise ValueError("任务 ID 重复")
         known = set(ids)
         for task in self.tasks:
             if task.workflow_id != self.id:
-                raise ValueError(f"task {task.id} workflow_id does not match workflow")
+                raise ValueError(f"任务 {task.id} 的工作流 ID 与当前工作流不一致")
             for dependency in task.dependencies:
                 if dependency not in known:
-                    raise ValueError(f"task {task.id} has missing dependency {dependency}")
+                    raise ValueError(f"任务 {task.id} 缺少依赖任务 {dependency}")
                 if dependency == task.id:
-                    raise ValueError(f"workflow contains cycle at task {task.id}")
+                    raise ValueError(f"工作流在任务 {task.id} 处形成环")
         self._layers()
         return self
 
@@ -111,7 +111,7 @@ class Workflow(DomainModel):
             ready = [task_id for task_id in order if task_id in remaining and not remaining[task_id]]
             if not ready:
                 cycle_members = ", ".join(task_id for task_id in order if task_id in remaining)
-                raise ValueError(f"workflow contains cycle involving: {cycle_members}")
+                raise ValueError(f"工作流存在环，涉及任务：{cycle_members}")
             layers.append(ready)
             for task_id in ready:
                 remaining.pop(task_id)
@@ -181,5 +181,5 @@ class Artifact(DomainModel):
     def relative_path_is_safe(cls, value: str) -> str:
         path = PurePosixPath(value)
         if path.is_absolute() or ".." in path.parts:
-            raise ValueError("artifact path must be a safe relative path")
+            raise ValueError("产物路径必须是安全的相对路径")
         return value

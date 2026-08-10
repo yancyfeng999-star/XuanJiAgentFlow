@@ -13,6 +13,9 @@ from .protocol import (
     NodeHealth,
     NodeLogPage,
     NodeTask,
+    TaskDispatch,
+    TaskInput,
+    TaskOutputPolicy,
 )
 from .registry import NodeRegistry, supports_group, supports_task
 from .tunnels import (
@@ -37,6 +40,9 @@ __all__ = [
     "NodeProtocolError",
     "NodeRegistry",
     "NodeTask",
+    "TaskDispatch",
+    "TaskInput",
+    "TaskOutputPolicy",
     "NodeTimeoutError",
     "NoopTunnelProvider",
     "SshTunnelProvider",

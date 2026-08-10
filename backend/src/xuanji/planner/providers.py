@@ -4,7 +4,7 @@ from typing import Protocol
 
 import httpx
 
-from xuanji.security import CredentialVault
+from xuanji.credentials import LocalCredentialStore
 
 
 class PlannerError(Exception):
@@ -22,32 +22,36 @@ class OpenAIChatCompletionsProvider:
         self,
         *,
         base_url: str,
-        credential_vault: CredentialVault,
+        credential_store: LocalCredentialStore,
         credential_key: str,
         client: httpx.AsyncClient | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 120.0,
     ):
         if client is not None and transport is not None:
-            raise ValueError("client and transport are mutually exclusive")
+            raise ValueError("客户端与传输适配器不能同时配置")
         self._url = f"{base_url.rstrip('/')}/chat/completions"
-        self._vault = credential_vault
+        self._credentials = credential_store
         self._credential_key = credential_key
         self._client = client
         self._transport = transport
         self._timeout = timeout
 
     async def complete(self, messages: list[dict[str, str]], model: str) -> str:
-        api_key = self._vault.get(self._credential_key)
+        api_key = self._credentials.get(self._credential_key)
         if not api_key:
-            raise PlannerError("planner_credentials_missing", "planner credentials are not configured")
+            raise PlannerError("planner_credentials_missing", "规划器接口密钥尚未配置")
 
         request = {
             "headers": {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            "json": {"messages": messages, "model": model},
+            "json": {
+                "messages": messages,
+                "model": model,
+                "response_format": {"type": "json_object"},
+            },
         }
         try:
             if self._client is not None:
@@ -59,21 +63,21 @@ class OpenAIChatCompletionsProvider:
                 ) as client:
                     response = await client.post(self._url, **request)
         except httpx.TimeoutException:
-            raise PlannerError("planner_timeout", "planner provider timed out") from None
+            raise PlannerError("planner_timeout", "规划器服务请求超时") from None
         except httpx.RequestError:
-            raise PlannerError("planner_provider_error", "planner provider request failed") from None
+            raise PlannerError("planner_provider_error", "规划器服务请求失败") from None
 
         if response.status_code == 401:
             raise PlannerError(
                 "planner_unauthorized",
-                "planner provider rejected credentials",
+                "规划器身份验证失败，请检查接口密钥",
             )
         try:
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
-                raise TypeError("planner content must be text")
+                raise TypeError("规划器返回内容必须是文本")
             return content
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-            raise PlannerError("planner_provider_error", "planner provider request failed") from None
+            raise PlannerError("planner_provider_error", "规划器服务请求失败") from None

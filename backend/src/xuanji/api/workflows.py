@@ -32,7 +32,7 @@ def _services(request: Request):
 def _workflow(request: Request, workflow_id: str) -> Workflow:
     workflow = _services(request).workflows.get(workflow_id)
     if workflow is None:
-        raise APIError(404, "workflow_not_found", "workflow not found", {"workflow_id": workflow_id})
+        raise APIError(404, "workflow_not_found", "工作流不存在", {"workflow_id": workflow_id})
     return workflow
 
 
@@ -41,12 +41,12 @@ async def plan(project_id: str, payload: PlanRequest, request: Request) -> dict:
     services = _services(request)
     project = services.projects.get(project_id)
     if project is None:
-        raise APIError(404, "project_not_found", "project not found", {"project_id": project_id})
+        raise APIError(404, "project_not_found", "项目不存在", {"project_id": project_id})
     if services.planner is None:
         raise APIError(
             503,
             "planner_not_configured",
-            "planner is not configured",
+            "规划器尚未配置，请先前往“设置”完成配置",
             {"configured": False},
         )
     workflow = await services.planner.plan(
@@ -67,7 +67,7 @@ async def plan(project_id: str, payload: PlanRequest, request: Request) -> dict:
 async def get_project_workflow(project_id: str, request: Request) -> dict | None:
     services = _services(request)
     if services.projects.get(project_id) is None:
-        raise APIError(404, "project_not_found", "project not found", {"project_id": project_id})
+        raise APIError(404, "project_not_found", "项目不存在", {"project_id": project_id})
     workflow = services.workflows.get_active(project_id)
     return workflow.model_dump(mode="json") if workflow else None
 
@@ -82,7 +82,7 @@ async def update_workflow(workflow_id: str, payload: UpdateWorkflowRequest, requ
     services = _services(request)
     workflow = _workflow(request, workflow_id)
     if workflow.status is not WorkflowStatus.DRAFT:
-        raise APIError(409, "workflow_frozen", "reviewed workflows cannot be edited")
+        raise APIError(409, "workflow_frozen", "工作流已审核冻结，不能继续编辑")
     try:
         updated = workflow.model_copy(
             update={
@@ -96,7 +96,7 @@ async def update_workflow(workflow_id: str, payload: UpdateWorkflowRequest, requ
         raise APIError(
             422,
             "workflow_invalid",
-            "workflow graph is invalid",
+            "工作流结构校验失败",
             {"errors": safe_validation_errors(error.errors())},
         ) from None
     services.workflows.update(updated)

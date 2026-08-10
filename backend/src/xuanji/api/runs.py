@@ -20,7 +20,7 @@ def _services(request: Request):
 def _run(request: Request, run_id: str) -> Run:
     run = _services(request).runs.get(run_id)
     if run is None:
-        raise APIError(404, "run_not_found", "run not found", {"run_id": run_id})
+        raise APIError(404, "run_not_found", "运行记录不存在", {"run_id": run_id})
     return run
 
 
@@ -36,7 +36,7 @@ def _run_payload(request: Request, run: Run) -> dict:
 def _workflow_for_run(request: Request, run: Run):
     workflow = _services(request).workflows.get(run.workflow_id)
     if workflow is None:
-        raise APIError(404, "workflow_not_found", "workflow not found")
+        raise APIError(404, "workflow_not_found", "工作流不存在")
     return workflow
 
 
@@ -45,9 +45,9 @@ async def create_run(workflow_id: str, request: Request) -> dict:
     services = _services(request)
     workflow = services.workflows.get(workflow_id)
     if workflow is None:
-        raise APIError(404, "workflow_not_found", "workflow not found", {"workflow_id": workflow_id})
+        raise APIError(404, "workflow_not_found", "工作流不存在", {"workflow_id": workflow_id})
     if workflow.status is not WorkflowStatus.REVIEWED:
-        raise APIError(409, "workflow_not_reviewed", "workflow must be reviewed before execution")
+        raise APIError(409, "workflow_not_reviewed", "工作流必须先审核，才能开始执行")
     run = Run(id=f"run-{uuid.uuid4().hex[:12]}", workflow_id=workflow.id)
     services.runs.create(run)
     services.artifacts.create_run(workflow.project_id, run.id, workflow.id)
@@ -99,9 +99,9 @@ async def retry_task(run_id: str, task_id: str, request: Request) -> dict:
     try:
         attempt = await _services(request).execution.retry_task(run_id, task_id)
     except KeyError:
-        raise APIError(404, "task_not_found", "task not found", {"task_id": task_id}) from None
+        raise APIError(404, "task_not_found", "任务不存在", {"task_id": task_id}) from None
     except ValueError as error:
-        raise APIError(409, "task_not_retryable", str(error)) from None
+        raise APIError(409, "task_not_retryable", "当前任务不可重试") from None
     return attempt.model_dump(mode="json")
 
 
@@ -111,9 +111,9 @@ async def skip_task(run_id: str, task_id: str, request: Request) -> dict:
     try:
         await _services(request).execution.skip_task(run_id, task_id)
     except KeyError:
-        raise APIError(404, "task_not_found", "task not found", {"task_id": task_id}) from None
+        raise APIError(404, "task_not_found", "任务不存在", {"task_id": task_id}) from None
     except ValueError as error:
-        raise APIError(409, "task_not_skippable", str(error)) from None
+        raise APIError(409, "task_not_skippable", "当前任务不可跳过") from None
     return _run_payload(request, _run(request, run_id))
 
 
@@ -128,7 +128,7 @@ async def list_task_logs(
     run = _run(request, run_id)
     workflow = _workflow_for_run(request, run)
     if not any(task.id == task_id for task in workflow.tasks):
-        raise APIError(404, "task_not_found", "task not found", {"task_id": task_id})
+        raise APIError(404, "task_not_found", "任务不存在", {"task_id": task_id})
     services = _services(request)
     log_path = services.artifacts.resolve_project_path(
         workflow.project_id,

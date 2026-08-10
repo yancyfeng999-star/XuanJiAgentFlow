@@ -40,12 +40,16 @@ async def run_events(
     last_event_id: int = Query(default=0, ge=0),
 ) -> None:
     if not _origin_allowed(websocket.headers.get("origin")):
-        await websocket.close(code=4403, reason="origin not allowed")
+        await websocket.close(code=4403, reason="不允许当前来源建立连接")
+        return
+    session_token = websocket.app.state.services.config.session_token
+    if session_token and websocket.query_params.get("session_token") != session_token:
+        await websocket.close(code=4401, reason="桌面会话已失效")
         return
     await websocket.accept()
     services = websocket.app.state.services
     if services.runs.get(run_id) is None:
-        await websocket.close(code=4404, reason="run not found")
+        await websocket.close(code=4404, reason="运行记录不存在")
         return
     cursor = last_event_id
     try:

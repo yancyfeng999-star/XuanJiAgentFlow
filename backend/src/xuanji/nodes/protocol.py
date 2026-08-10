@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class NodeMessage(BaseModel):
@@ -12,6 +12,49 @@ class NodeMessage(BaseModel):
 
 class NodeHealth(NodeMessage):
     status: Literal["ok", "degraded"]
+
+
+class TaskInput(NodeMessage):
+    source_task_id: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    size: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("path")
+    @classmethod
+    def safe_path(cls, value: str) -> str:
+        parts = value.replace("\\", "/").split("/")
+        if value.startswith(("/", "\\")) or not all(parts) or ".." in parts:
+            raise ValueError("输入路径必须是安全的相对路径")
+        return "/".join(parts)
+
+
+class TaskOutputPolicy(NodeMessage):
+    mode: Literal["strict", "discover"] = "discover"
+    expected: list[str] = Field(default_factory=list)
+
+    @field_validator("expected")
+    @classmethod
+    def safe_expected_paths(cls, value: list[str]) -> list[str]:
+        for path in value:
+            parts = path.replace("\\", "/").split("/")
+            if path.startswith(("/", "\\")) or not all(parts) or ".." in parts:
+                raise ValueError("输出路径必须是安全的相对路径")
+        return [path.replace("\\", "/") for path in value]
+
+
+class TaskDispatch(NodeMessage):
+    idempotency_key: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,126}[A-Za-z0-9])?$",
+    )
+    instruction: str = Field(min_length=1, max_length=200_000)
+    project_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    inputs: list[TaskInput] = Field(default_factory=list)
+    output_policy: TaskOutputPolicy = Field(default_factory=TaskOutputPolicy)
 
 
 class NodeTask(NodeMessage):

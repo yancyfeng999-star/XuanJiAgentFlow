@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from typing import AsyncIterator
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -22,8 +22,25 @@ class FakeNodeMode(StrEnum):
     BAD_DOWNLOAD_HEADERS = "bad_download_headers"
 
 
+class TaskInputRequest(BaseModel):
+    source_task_id: str
+    path: str
+    size: int
+    sha256: str
+
+
+class OutputPolicyRequest(BaseModel):
+    mode: str = "discover"
+    expected: list[str] = []
+
+
 class CreateTaskRequest(BaseModel):
-    goal: str
+    instruction: str
+    project_id: str
+    run_id: str
+    task_id: str
+    inputs: list[TaskInputRequest] = []
+    output_policy: OutputPolicyRequest = OutputPolicyRequest()
     idempotency_key: str
 
 
@@ -35,6 +52,8 @@ class FakeTask:
     hermes_run_id: str
     error: str | None = None
     polls: int = 0
+    inputs: list[dict] | None = None
+    expected: list[str] | None = None
 
 
 class _OfflineTransport(httpx.AsyncBaseTransport):
@@ -106,11 +125,40 @@ class FakeNode:
             self.create_calls += 1
             task = FakeTask(
                 id=request.idempotency_key,
-                status="running",
-                goal=request.goal,
+                status="queued",
+                goal=request.instruction,
                 hermes_run_id=f"hermes-{request.idempotency_key}",
+                inputs=[item.model_dump() for item in request.inputs],
+                expected=request.output_policy.expected,
             )
             self.tasks[task.id] = task
+            return asdict(task)
+
+        @app.put("/v1/tasks/{task_id}/inputs/{input_path:path}")
+        async def upload_input(
+            task_id: str,
+            input_path: str,
+            request: Request,
+            x_input_size: int = Header(),
+            x_input_sha256: str = Header(),
+            _: None = Depends(authorize),
+        ) -> dict:
+            task = self._task(task_id)
+            body = await request.body()
+            declared = next((item for item in task.inputs or [] if item["path"] == input_path), None)
+            if declared is None:
+                raise HTTPException(status_code=404, detail="input not declared")
+            if len(body) != x_input_size or hashlib.sha256(body).hexdigest() != x_input_sha256:
+                raise HTTPException(status_code=400, detail="invalid input")
+            path = self._task_dir(task) / "inputs" / Path(*PurePosixPath(input_path).parts)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+            return {"path": input_path, "size": x_input_size, "sha256": x_input_sha256}
+
+        @app.post("/v1/tasks/{task_id}/start")
+        async def start_task(task_id: str, _: None = Depends(authorize)) -> dict:
+            task = self._task(task_id)
+            task.status = "running"
             return asdict(task)
 
         @app.get("/v1/tasks/{task_id}")
@@ -189,12 +237,18 @@ class FakeNode:
         return self.root / task.id
 
     def _artifact_path(self, task: FakeTask) -> Path:
-        return self._task_dir(task) / "artifacts" / "result.txt"
+        expected = task.expected or []
+        return self._task_dir(task) / "artifacts" / (expected[0] if len(expected) == 1 else "result.txt")
 
     def _write_artifact(self, task: FakeTask) -> None:
         path = self._artifact_path(task)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"result for {task.goal}", encoding="utf-8")
+        input_text = ""
+        for item in task.inputs or []:
+            input_path = self._task_dir(task) / "inputs" / Path(*PurePosixPath(item["path"]).parts)
+            if input_path.exists():
+                input_text += "\n" + input_path.read_text(encoding="utf-8")
+        path.write_text(f"result for {task.goal}{input_text}", encoding="utf-8")
 
     def _resolve_artifact(self, task: FakeTask, artifact_path: str) -> Path:
         relative = PurePosixPath(artifact_path)

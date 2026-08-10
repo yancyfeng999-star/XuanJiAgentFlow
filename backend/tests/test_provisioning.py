@@ -26,6 +26,23 @@ class FakeSSHRunner(SSHRunner):
         self.commands.append(command)
         return self.responses.get(command, (0, "", ""))
 
+    def deploy_node_agent(self, local_package_path: str, remote_dir: str = "~/.xuanji-node") -> dict:
+        assert Path(local_package_path).is_file()
+        return {"success": True, "output": "installed"}
+
+    def start_node_agent(
+        self,
+        api_key: str,
+        *,
+        hermes_port: int = 8642,
+        node_port: int = 8765,
+        remote_dir: str = "~/.xuanji-node",
+    ) -> dict:
+        return {"success": True, "output": "started"}
+
+    def check_node_agent(self, port: int = 8765, api_key: str = "") -> dict:
+        return {"online": True, "output": '{"status":"ok"}'}
+
 
 def test_check_hermes_installed():
     runner = FakeSSHRunner()
@@ -50,7 +67,7 @@ def test_provisioning_workflow_success():
     runner.responses["hermes config set api_server.enabled true && hermes config set api_server.port 8642 && hermes gateway start 2>&1"] = (0, "Gateway started", "")
     runner.responses["curl -sf http://127.0.0.1:8642/v1/capabilities 2>&1 || echo OFFLINE"] = (0, '{"models":[]}', "")
 
-    svc = ProvisioningService()
+    svc = ProvisioningService(node_agent_dir=Path(__file__).resolve().parents[2] / "node-agent")
     # Monkey-patch the runner
     svc._create_runner = lambda host: runner
     host = SSHHost(host="192.168.1.100")
@@ -65,12 +82,16 @@ def test_provisioning_workflow_success():
     assert steps[3]["step"] == "start_api_server"
     assert steps[4]["step"] == "verify_api_server"
     assert steps[4]["online"] is True
+    assert steps[5]["step"] == "deploy_node_agent"
+    assert steps[6]["step"] == "start_node_agent"
+    assert steps[7]["step"] == "verify_node_agent"
+    assert steps[7]["online"] is True
 
 
 def test_provisioning_requires_verified_api_server_online():
     steps = [
         {"step": "ssh_connect", "success": True},
-        {"step": "verify_api_server", "online": False},
+        {"step": "verify_node_agent", "online": False},
     ]
 
     assert provisioning_succeeded(steps) is False
@@ -105,4 +126,4 @@ def test_ssh_uses_host_key_verification_and_api_token_via_stdin(monkeypatch, tmp
     runner.start_api_server(8642, secret)
     args, kwargs = calls[-1]
     assert secret not in " ".join(args)
-    assert kwargs["input"] == secret
+    assert kwargs["input"] == f"{secret}\n"

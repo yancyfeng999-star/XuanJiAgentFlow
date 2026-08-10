@@ -82,7 +82,7 @@ def test_finalize_success_only_after_all_files_verify(tmp_path):
     attempt = TaskAttempt(id="a1", run_id="r1", task_id="t1", attempt=1, status=TaskStatus.COLLECTING)
 
     output.write_text("tampered")
-    with pytest.raises(ArtifactVerificationError, match="hash mismatch"):
+    with pytest.raises(ArtifactVerificationError, match="哈希不匹配"):
         manager.finalize_success("p1", attempt, manifest)
     assert attempt.status is TaskStatus.COLLECTING
 

@@ -32,7 +32,7 @@ def test_workflow_returns_stable_topological_order_and_parallel_layers():
 
 
 def test_workflow_rejects_cycle():
-    with pytest.raises(ValidationError, match="cycle"):
+    with pytest.raises(ValidationError, match="存在环"):
         Workflow(
             id="workflow_1",
             project_id="project_1",
@@ -43,7 +43,7 @@ def test_workflow_rejects_cycle():
 
 
 def test_workflow_rejects_missing_dependency():
-    with pytest.raises(ValidationError, match="missing dependency"):
+    with pytest.raises(ValidationError, match="缺少依赖任务"):
         Workflow(
             id="workflow_1",
             project_id="project_1",
@@ -54,7 +54,7 @@ def test_workflow_rejects_missing_dependency():
 
 
 def test_workflow_rejects_duplicate_task_id():
-    with pytest.raises(ValidationError, match="duplicate task id"):
+    with pytest.raises(ValidationError, match="任务 ID 重复"):
         Workflow(
             id="workflow_1",
             project_id="project_1",
@@ -67,7 +67,7 @@ def test_workflow_rejects_duplicate_task_id():
 def test_workflow_rejects_task_bound_to_other_workflow():
     task = make_task("a")
     task.workflow_id = "other"
-    with pytest.raises(ValidationError, match="workflow_id"):
+    with pytest.raises(ValidationError, match="工作流 ID"):
         Workflow(
             id="workflow_1",
             project_id="project_1",

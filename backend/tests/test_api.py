@@ -18,7 +18,7 @@ from xuanji.api.app import CoordinatorConfig, create_coordinator_app
 from xuanji.api.errors import install_error_handlers
 from xuanji.domain.enums import WorkflowStatus
 from xuanji.domain.models import Task, Workflow
-from xuanji.nodes import NodeClient
+from xuanji.nodes import NodeClient, NodeHealth
 from xuanji.provisioning import ProvisioningService
 
 
@@ -112,12 +112,6 @@ def review_workflow(client: TestClient, workflow_id: str) -> dict:
 
 
 def create_node(client: TestClient) -> dict:
-    if client.get("/api/security/status").json()["status"] == "uninitialized":
-        initialized = client.post(
-            "/api/security/initialize",
-            json={"password": "correct horse battery staple"},
-        )
-        assert initialized.status_code == 201
     response = client.post(
         "/api/nodes",
         json={
@@ -172,7 +166,7 @@ def assert_error(response, status: int, code: str) -> dict:
 
 def test_lifespan_initializes_and_closes_resources(api_harness) -> None:
     client, app, _, transport_client = api_harness
-    assert client.get("/api/status").json() == {"status": "ok", "version": "2.0.0"}
+    assert client.get("/api/status").json() == {"status": "ok", "version": "3.0.0"}
     database = app.state.services.database
     assert database.connection.execute("SELECT 1").fetchone()[0] == 1
     assert not transport_client.is_closed
@@ -274,7 +268,6 @@ def test_validation_errors_use_unified_envelope(api_harness) -> None:
 @pytest.mark.parametrize(
     ("path", "method", "payload", "secret"),
     [
-        ("/api/security/initialize", "post", {"password": "master-secret-" + "x" * 1024}, "master-secret-"),
         ("/api/nodes", "post", {"id": "node-secret-test", "kind": "local", "api_url": "http://node.test", "credential": "token-never-echo"}, "token-never-echo"),
         ("/api/planner/config", "put", {"base_url": "https://planner.test/v1", "credential_key": "planner.primary", "credential": "api-key-never-echo"}, "api-key-never-echo"),
     ],
@@ -334,7 +327,7 @@ def test_workflow_cycle_returns_structured_error(api_harness) -> None:
         422,
         "workflow_invalid",
     )
-    assert "cycle" in str(error["details"]).lower()
+    assert "环" in str(error["details"])
 
 
 def test_workflow_validation_errors_never_echo_secret_prompt(api_harness) -> None:
@@ -399,7 +392,17 @@ def test_run_pause_resume_cancel_retry_and_skip_routes(api_harness) -> None:
     assert failed_response.status_code == 201
     failed_run = failed_response.json()
     assert client.post(f"/api/runs/{failed_run['id']}/start").status_code == 202
-    wait_for_run(client, failed_run["id"], {"blocked"})
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        failed_state = client.get(f"/api/runs/{failed_run['id']}").json()
+        research_attempt = next(
+            attempt for attempt in failed_state["attempts"] if attempt["task_id"] == "research"
+        )
+        if research_attempt["status"] == "failed":
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("research attempt did not fail before automatic retry delay")
     fake.mode = FakeNodeMode.SUCCESS
     retried = client.post(f"/api/runs/{failed_run['id']}/tasks/research/retry")
     assert retried.status_code == 200, retried.text
@@ -416,7 +419,6 @@ def test_run_pause_resume_cancel_retry_and_skip_routes(api_harness) -> None:
 
 def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     client, _, _, _ = api_harness
-    assert client.post("/api/security/initialize", json={"password": "correct horse battery staple"}).status_code == 201
     node = create_node(client)
     assert node["credential_configured"] is True
     assert "credential" not in node
@@ -427,6 +429,10 @@ def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     assert diagnosed.status_code == 200, diagnosed.text
     assert diagnosed.json()["health"]["status"] == "ok"
     assert diagnosed.json()["capabilities"]["models"] == ["fake-model"]
+    persisted = client.get("/api/nodes").json()[0]
+    assert persisted["status"] == "online"
+    assert persisted["capabilities_json"]["models"] == ["fake-model"]
+    assert persisted["last_seen_at"] is not None
 
     updated = client.patch(
         "/api/nodes/node-1",
@@ -440,19 +446,18 @@ def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     assert_error(client.post("/api/nodes/node-1/diagnose"), 404, "node_not_found")
 
 
-def test_locked_vault_reports_node_credential_state_without_leaking_token(api_harness) -> None:
+def test_node_credential_state_is_available_without_leaking_token(api_harness) -> None:
     client, _, _, _ = api_harness
     create_node(client)
-    assert client.post("/api/security/lock").status_code == 200
 
     response = client.get("/api/nodes")
 
     assert response.status_code == 200
-    assert response.json()[0]["credential_configured"] is None
+    assert response.json()[0]["credential_configured"] is True
     assert "node-secret" not in response.text
 
 
-def test_locked_vault_rejects_node_deletion_without_removing_state(api_harness) -> None:
+def test_node_deletion_removes_client_and_credential(api_harness) -> None:
     class ProtectedClient:
         def __init__(self) -> None:
             self.closed = False
@@ -462,18 +467,15 @@ def test_locked_vault_rejects_node_deletion_without_removing_state(api_harness) 
 
     client, app, _, _ = api_harness
     create_node(client)
-    assert client.post("/api/security/lock").status_code == 200
     protected_client = ProtectedClient()
     app.state.services.node_clients["node-1"] = protected_client
     app.state.services.execution.node_clients["node-1"] = protected_client
 
-    error = assert_error(client.delete("/api/nodes/node-1"), 423, "vault_locked")
-
-    assert error["details"] == {"node_id": "node-1"}
-    assert app.state.services.nodes.get("node-1") is not None
-    assert app.state.services.node_clients["node-1"] is protected_client
-    assert app.state.services.execution.node_clients["node-1"] is protected_client
-    assert protected_client.closed is False
+    assert client.delete("/api/nodes/node-1").status_code == 204
+    assert app.state.services.nodes.get("node-1") is None
+    assert "node-1" not in app.state.services.node_clients
+    assert "node-1" not in app.state.services.execution.node_clients
+    assert protected_client.closed is True
 
 
 @pytest.mark.parametrize("node_id", [".", ".."])
@@ -497,11 +499,6 @@ def test_node_id_rejects_dot_path_segments_without_persisting(api_harness, node_
 
 def test_node_id_must_be_a_safe_path_segment(api_harness) -> None:
     client, _, _, _ = api_harness
-    assert client.post(
-        "/api/security/initialize",
-        json={"password": "correct horse battery staple"},
-    ).status_code == 201
-
     error = assert_error(
         client.post(
             "/api/nodes",
@@ -519,35 +516,9 @@ def test_node_id_must_be_a_safe_path_segment(api_harness) -> None:
     assert isinstance(error["details"]["errors"], list)
 
 
-def test_security_lifecycle_and_credentials_are_write_only(api_harness) -> None:
+def test_security_routes_are_removed(api_harness) -> None:
     client, _, _, _ = api_harness
-    assert client.get("/api/security/status").json() == {"status": "uninitialized"}
-    initialized = client.post(
-        "/api/security/initialize",
-        json={"password": "correct horse battery staple"},
-    )
-    assert initialized.status_code == 201
-    assert initialized.json() == {"status": "unlocked"}
-
-    secret = "sk-live-never-return-this"
-    stored = client.put("/api/security/credentials/planner.deepseek", json={"value": secret})
-    assert stored.status_code == 204
-    assert secret not in stored.text
-    assert client.post("/api/security/lock").json() == {"status": "locked"}
-    assert_error(
-        client.put("/api/security/credentials/planner.deepseek", json={"value": secret}),
-        423,
-        "vault_locked",
-    )
-    assert_error(
-        client.post("/api/security/unlock", json={"password": "wrong-password"}),
-        401,
-        "vault_authentication_failed",
-    )
-    assert client.post(
-        "/api/security/unlock",
-        json={"password": "correct horse battery staple"},
-    ).json() == {"status": "unlocked"}
+    assert client.get("/api/security/status").status_code == 404
 
 
 def test_artifact_list_and_safe_download(api_harness) -> None:
@@ -628,11 +599,8 @@ def test_default_app_reports_planner_not_configured_and_persists_redacted_config
             503,
             "planner_not_configured",
         )
+        assert error["message"] == "规划器尚未配置，请先前往“设置”完成配置"
         assert error["details"] == {"configured": False}
-        assert client.post(
-            "/api/security/initialize",
-            json={"password": "correct horse battery staple"},
-        ).status_code == 201
         secret = "planner-secret-never-echo"
         configured = client.put(
             "/api/planner/config",
@@ -661,7 +629,7 @@ def test_default_app_reports_planner_not_configured_and_persists_redacted_config
     with TestClient(restarted) as client:
         saved = client.get("/api/planner/config")
         assert saved.status_code == 200
-        assert saved.json()["credential_configured"] is None
+        assert saved.json()["credential_configured"] is True
         assert restarted.state.services.planner is not None
     assert built[-1] == {
         "base_url": "https://planner.test/v1",
@@ -678,6 +646,12 @@ class RecordingNodeClient:
 
     async def close(self) -> None:
         self.closed = True
+
+    async def health(self) -> NodeHealth:
+        return NodeHealth(status="ok")
+
+    async def capabilities(self) -> dict[str, list[str]]:
+        return {"models": ["recording"], "tools": [], "tags": []}
 
 
 class OfflineProvisioner(ProvisioningService):
@@ -697,7 +671,7 @@ class RecordingProvisioner(ProvisioningService):
         return [{"step": "ssh_connect", "success": True}]
 
 
-def test_node_client_lifecycle_restart_locked_diagnostic_and_remote_provision(tmp_path: Path) -> None:
+def test_node_client_lifecycle_restart_diagnostic_and_remote_provision(tmp_path: Path) -> None:
     created_clients: list[RecordingNodeClient] = []
     provisioner = RecordingProvisioner()
 
@@ -714,7 +688,6 @@ def test_node_client_lifecycle_restart_locked_diagnostic_and_remote_provision(tm
         provisioning=provisioner,
     )
     with TestClient(app) as client:
-        client.post("/api/security/initialize", json={"password": "vault-password"})
         created = client.post(
             "/api/nodes",
             json={
@@ -756,16 +729,6 @@ def test_node_client_lifecycle_restart_locked_diagnostic_and_remote_provision(tm
     restarted = create_coordinator_app(config, node_client_factory=client_factory)
     with TestClient(restarted) as client:
         assert client.get("/api/nodes").json()[0]["id"] == "remote-1"
-        assert "remote-1" not in restarted.state.services.node_clients
-        locked = assert_error(
-            client.post("/api/nodes/remote-1/diagnose"),
-            423,
-            "vault_locked",
-        )
-        assert locked["details"] == {"node_id": "remote-1", "configured": True}
-        assert client.post(
-            "/api/security/unlock", json={"password": "vault-password"}
-        ).status_code == 200
         assert "remote-1" in restarted.state.services.node_clients
         active = restarted.state.services.node_clients["remote-1"]
         assert active is restarted.state.services.execution.node_clients["remote-1"]
@@ -876,7 +839,7 @@ def test_error_handlers_normalize_integrity_key_and_unhandled_without_leak() -> 
         assert_error(key_response, 404, "resource_not_found")
         unhandled_response = client.get("/unhandled")
         error = assert_error(unhandled_response, 500, "internal_error")
-        assert error["message"] == "internal server error"
+        assert error["message"] == "服务器内部错误"
         assert error["details"] == {}
         assert "password" not in unhandled_response.text
 

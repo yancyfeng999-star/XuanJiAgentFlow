@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import hmac
 from collections.abc import AsyncIterator, Callable, Coroutine, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -9,10 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from xuanji.artifacts.manager import ArtifactManager
+from xuanji.credentials import LocalCredentialStore
 from xuanji.domain.enums import RunStatus
 from xuanji.domain.models import HermesNode
 from xuanji.execution import ExecutionManager, RecoveryService
@@ -21,7 +24,6 @@ from xuanji.planner.providers import OpenAIChatCompletionsProvider
 from xuanji.planner.service import PlannerService
 from xuanji.provisioning import ProvisioningService
 from xuanji.provisioning.ssh import app_known_hosts_path, ensure_known_hosts_file
-from xuanji.security import CredentialVault, VaultLockedError
 from xuanji.storage.database import Database
 from xuanji.storage.repositories import (
     ArtifactRepository,
@@ -40,7 +42,7 @@ class Planner(Protocol):
     async def plan(self, project_id: str, goal: str, context: str, constraints: dict): ...
 
 
-PlannerFactory = Callable[[dict[str, str], CredentialVault], Planner]
+PlannerFactory = Callable[[dict[str, str], LocalCredentialStore], Planner]
 NodeClientFactory = Callable[[str, str], NodeClient]
 
 
@@ -48,6 +50,7 @@ NodeClientFactory = Callable[[str, str], NodeClient]
 class CoordinatorConfig:
     data_dir: Path
     poll_interval: float = 1.0
+    session_token: str | None = None
 
     @property
     def db_path(self) -> Path:
@@ -58,8 +61,8 @@ class CoordinatorConfig:
         return self.data_dir / "projects"
 
     @property
-    def vault_path(self) -> Path:
-        return self.data_dir / "credentials.vault"
+    def credentials_path(self) -> Path:
+        return self.data_dir / "credentials.json"
 
     @property
     def known_hosts_path(self) -> Path:
@@ -70,7 +73,7 @@ class CoordinatorConfig:
 class Services:
     config: CoordinatorConfig
     database: Database
-    vault: CredentialVault
+    credentials: LocalCredentialStore
     planner: Planner | None
     planner_factory: PlannerFactory
     artifacts: ArtifactManager
@@ -95,7 +98,7 @@ class Services:
     async def install_node_client(self, node: HermesNode, credential: str | None = None) -> bool:
         token = credential
         if token is None:
-            token = self.vault.get(self.node_credential_key(node.id))
+            token = self.credentials.get(self.node_credential_key(node.id))
         if not token:
             await self.remove_node_client(node.id)
             return False
@@ -114,12 +117,8 @@ class Services:
             await _close(previous)
 
     async def rebuild_node_clients(self) -> None:
-        try:
-            for node in self.nodes.list():
-                await self.install_node_client(node)
-        except VaultLockedError:
-            for node_id in list(self.node_clients):
-                await self.remove_node_client(node_id)
+        for node in self.nodes.list():
+            await self.install_node_client(node)
 
     async def close_node_clients(self) -> None:
         for node_id in list(self.node_clients):
@@ -177,10 +176,13 @@ async def _close(resource: Any) -> None:
         await result
 
 
-def _default_planner_factory(config: dict[str, str], vault: CredentialVault) -> Planner:
+def _default_planner_factory(
+    config: dict[str, str],
+    credentials: LocalCredentialStore,
+) -> Planner:
     provider = OpenAIChatCompletionsProvider(
         base_url=config["base_url"],
-        credential_vault=vault,
+        credential_store=credentials,
         credential_key=config["credential_key"],
     )
     return PlannerService(provider, model=config["model"], provider_name="openai-compatible")
@@ -208,7 +210,7 @@ def create_coordinator_app(
         ensure_known_hosts_file(config.known_hosts_path)
         database = Database(config.db_path)
         database.migrate()
-        vault = CredentialVault(config.vault_path)
+        credentials = LocalCredentialStore(config.credentials_path)
         artifacts = ArtifactManager(config.projects_dir)
         clients = dict(node_clients or {})
         tunnel_provider = tunnels or SshTunnelProvider(known_hosts_path=config.known_hosts_path)
@@ -236,12 +238,12 @@ def create_coordinator_app(
         config_repository = ConfigRepository(database)
         planner_config = config_repository.get("planner")
         active_planner = planner or (
-            build_planner(planner_config, vault) if planner_config is not None else None
+            build_planner(planner_config, credentials) if planner_config is not None else None
         )
         services = Services(
             config=config,
             database=database,
-            vault=vault,
+            credentials=credentials,
             planner=active_planner,
             planner_factory=build_planner,
             artifacts=artifacts,
@@ -271,10 +273,29 @@ def create_coordinator_app(
             await services.drain_background_tasks()
             await manager.close()
             await services.close_node_clients()
-            vault.lock()
             database.close()
 
-    app = FastAPI(title="璇玑 Coordinator", version="2.0.0", lifespan=lifespan)
+    app = FastAPI(title="璇玑 Coordinator", version="3.0.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def require_desktop_session(request: Request, call_next):
+        token = config.session_token
+        if token and request.url.path != "/api/status":
+            supplied = request.headers.get("X-Xuanji-Session") or request.query_params.get(
+                "session_token", ""
+            )
+            if not hmac.compare_digest(supplied, token):
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "error": {
+                            "code": "invalid_session",
+                            "message": "桌面会话已失效，请重新启动应用",
+                            "details": {},
+                        }
+                    },
+                )
+        return await call_next(request)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["tauri://localhost", "http://tauri.localhost"],
@@ -290,7 +311,6 @@ def create_coordinator_app(
     from .planner import router as planner_router
     from .projects import router as projects_router
     from .runs import router as runs_router
-    from .security import router as security_router
     from .workflows import router as workflows_router
 
     for router in (
@@ -298,7 +318,6 @@ def create_coordinator_app(
         workflows_router,
         runs_router,
         nodes_router,
-        security_router,
         planner_router,
         artifacts_router,
         events_router,
@@ -307,7 +326,7 @@ def create_coordinator_app(
 
     @app.get("/api/status")
     async def status() -> dict[str, str]:
-        return {"status": "ok", "version": "2.0.0"}
+        return {"status": "ok", "version": "3.0.0"}
 
     return app
 

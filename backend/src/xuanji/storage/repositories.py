@@ -432,12 +432,12 @@ class EventRepository:
             )
         event_id = cursor.lastrowid
         if event_id is None:
-            raise RuntimeError("SQLite did not return an event id")
+            raise RuntimeError("SQLite 未返回事件 ID")
         return StoredEvent(event_id, run_id, event_type, payload, created_at)
 
     def list_for_run(self, run_id: str, after_event_id: int = 0, limit: int = 100) -> list[StoredEvent]:
         if limit < 1:
-            raise ValueError("limit must be positive")
+            raise ValueError("查询数量必须大于零")
         rows = self.database.connection.execute(
             "SELECT * FROM events WHERE run_id=? AND event_id>? ORDER BY event_id LIMIT ?",
             (run_id, after_event_id, limit),

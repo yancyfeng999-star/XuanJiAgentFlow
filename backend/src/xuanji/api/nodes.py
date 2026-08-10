@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from xuanji.domain.enums import NodeStatus
 from xuanji.domain.models import HermesNode
+from xuanji.nodes import NodeClientError
 from xuanji.provisioning import SSHHost
 from xuanji.provisioning.ssh import provisioning_succeeded
-from xuanji.security import VaultLockedError
-
 from .errors import APIError
 
 router = APIRouter(prefix="/api/nodes", tags=["nodes"])
@@ -39,7 +40,7 @@ class CreateNodeRequest(BaseModel):
     @classmethod
     def reject_dot_segments(cls, value: str) -> str:
         if value in {".", ".."}:
-            raise ValueError("node id cannot be a dot path segment")
+            raise ValueError("节点 ID 不能使用点路径片段")
         return value
 
 
@@ -71,26 +72,55 @@ def _services(request: Request):
 def _node(request: Request, node_id: str) -> HermesNode:
     node = _services(request).nodes.get(node_id)
     if node is None:
-        raise APIError(404, "node_not_found", "node not found", {"node_id": node_id})
+        raise APIError(404, "node_not_found", "执行节点不存在", {"node_id": node_id})
     return node
 
 
 def _response(request: Request, node: HermesNode) -> dict:
     services = _services(request)
-    configured = None
-    if services.vault.status == "unlocked":
-        configured = services.vault.get(services.node_credential_key(node.id)) is not None
+    configured = services.credentials.get(services.node_credential_key(node.id)) is not None
     return {**node.model_dump(mode="json"), "credential_configured": configured}
 
 
 async def _configure_client(request: Request, node: HermesNode, credential: str | None) -> None:
     services = _services(request)
     if credential is not None:
-        services.vault.set(services.node_credential_key(node.id), credential)
+        services.credentials.set(services.node_credential_key(node.id), credential)
+    await services.install_node_client(node, credential)
+
+
+async def _diagnose(request: Request, node: HermesNode) -> tuple[HermesNode, dict]:
+    services = _services(request)
+    client = services.node_clients.get(node.id)
+    if client is None:
+        raise APIError(
+            503,
+            "node_client_unavailable",
+            "节点客户端当前不可用",
+            {"node_id": node.id},
+        )
     try:
-        await services.install_node_client(node, credential)
-    except VaultLockedError:
-        await services.remove_node_client(node.id)
+        health = await client.health()
+        capabilities = await client.capabilities()
+    except NodeClientError:
+        offline = node.model_copy(
+            update={"status": NodeStatus.OFFLINE, "last_seen_at": datetime.now(timezone.utc)}
+        )
+        services.nodes.upsert(offline)
+        raise
+    diagnosed = node.model_copy(
+        update={
+            "status": NodeStatus.ONLINE if health.status == "ok" else NodeStatus.DEGRADED,
+            "capabilities_json": capabilities,
+            "last_seen_at": datetime.now(timezone.utc),
+        }
+    )
+    services.nodes.upsert(diagnosed)
+    return diagnosed, {
+        "health": health.model_dump(mode="json"),
+        "capabilities": capabilities,
+        "node": _response(request, diagnosed),
+    }
 
 
 @router.get("")
@@ -108,6 +138,10 @@ async def create_node(payload: CreateNodeRequest, request: Request) -> dict:
     except Exception:
         services.nodes.delete(node.id)
         raise
+    try:
+        node, _ = await _diagnose(request, node)
+    except (NodeClientError, APIError):
+        node = services.nodes.get(node.id) or node
     return _response(request, node)
 
 
@@ -126,41 +160,16 @@ async def update_node(node_id: str, payload: UpdateNodeRequest, request: Request
 async def delete_node(node_id: str, request: Request) -> Response:
     _node(request, node_id)
     services = _services(request)
-    if services.vault.status == "locked":
-        raise APIError(
-            423,
-            "vault_locked",
-            "credential vault is locked",
-            {"node_id": node_id},
-        )
     services.nodes.delete(node_id)
     await services.remove_node_client(node_id)
-    services.vault.delete(services.node_credential_key(node_id))
+    services.credentials.delete(services.node_credential_key(node_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{node_id}/diagnose")
 async def diagnose_node(node_id: str, request: Request) -> dict:
-    _node(request, node_id)
-    services = _services(request)
-    client = services.node_clients.get(node_id)
-    if client is None:
-        if services.vault.status == "locked":
-            raise APIError(
-                423,
-                "vault_locked",
-                "credential vault is locked",
-                {"node_id": node_id, "configured": True},
-            )
-        raise APIError(
-            503,
-            "node_client_unavailable",
-            "node client is unavailable",
-            {"node_id": node_id},
-        )
-    health = await client.health()
-    capabilities = await client.capabilities()
-    return {"health": health.model_dump(mode="json"), "capabilities": capabilities}
+    _, result = await _diagnose(request, _node(request, node_id))
+    return result
 
 
 @router.post("/{node_id}/provision")
@@ -174,11 +183,11 @@ async def provision_node(
         raise APIError(
             422,
             "node_not_remote",
-            "node does not have remote SSH configuration",
+            "该节点未配置远程连接信息",
             {"node_id": node_id},
         )
     services = _services(request)
-    api_key = services.vault.get(services.node_credential_key(node_id)) or ""
+    api_key = services.credentials.get(services.node_credential_key(node_id)) or ""
     host = SSHHost(
         host=node.ssh_host,
         port=node.ssh_port or 22,

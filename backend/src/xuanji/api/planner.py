@@ -3,8 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-from xuanji.security import VaultLockedError
-
 router = APIRouter(prefix="/api/planner", tags=["planner"])
 
 
@@ -34,10 +32,7 @@ async def get_config(request: Request) -> dict:
     config = services.app_config.get("planner")
     if config is None:
         return _payload(None, False)
-    try:
-        credential_configured = services.vault.get(config["credential_key"]) is not None
-    except VaultLockedError:
-        credential_configured = None
+    credential_configured = services.credentials.get(config["credential_key"]) is not None
     return _payload(config, credential_configured)
 
 
@@ -50,11 +45,8 @@ async def set_config(payload: PlannerConfigRequest, request: Request) -> dict:
         "credential_key": payload.credential_key,
     }
     if payload.credential is not None:
-        services.vault.set(payload.credential_key, payload.credential)
+        services.credentials.set(payload.credential_key, payload.credential)
     services.app_config.set("planner", config)
-    services.planner = services.planner_factory(config, services.vault)
-    try:
-        credential_configured = services.vault.get(payload.credential_key) is not None
-    except VaultLockedError:
-        credential_configured = None
+    services.planner = services.planner_factory(config, services.credentials)
+    credential_configured = services.credentials.get(payload.credential_key) is not None
     return _payload(config, credential_configured)

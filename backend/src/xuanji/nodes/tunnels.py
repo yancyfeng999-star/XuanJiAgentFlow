@@ -213,7 +213,7 @@ class SshTunnelProvider:
 
     async def open(self, owner_id: str, node: HermesNode) -> TunnelEndpoint:
         if not owner_id:
-            raise TunnelError("invalid_owner", "owner_id is required")
+            raise TunnelError("invalid_owner", "隧道所属任务 ID 不能为空")
         async with self._lock:
             existing = self._tunnels.get(owner_id)
             if existing is not None:
@@ -230,7 +230,7 @@ class SshTunnelProvider:
                 return endpoint
 
             if not node.ssh_host:
-                raise TunnelError("ssh_not_configured", f"node {node.id} has no ssh_host")
+                raise TunnelError("ssh_not_configured", f"节点 {node.id} 尚未配置远程连接主机")
 
             local_port = allocate_local_port(self._local_host)
             remote_port = remote_api_port(node)
@@ -316,14 +316,14 @@ class SshTunnelProvider:
         if is_host_key_failure(text):
             fingerprint = extract_fingerprint(text)
             raise TunnelHostKeyError(
-                "SSH host key is unknown or changed; confirm the fingerprint before continuing",
+                "远程连接主机指纹未知或已变化，请确认指纹后继续",
                 host=host,
                 fingerprint=fingerprint,
                 stderr=text[-2000:],
             )
         raise TunnelError(
             "tunnel_open_failed",
-            f"ssh tunnel process exited during setup (code={process.returncode})",
+            f"远程连接通道在建立过程中退出（退出码：{process.returncode}）",
             host=host,
             stderr=text[-2000:],
         )
@@ -356,7 +356,7 @@ class SshTunnelProvider:
         joined = " ".join(argv).lower()
         for forbidden in ("bearer ", "authorization:", "api_key=", "token="):
             if forbidden in joined:
-                raise TunnelError("secret_in_argv", "tunnel argv must not include credentials")
+                raise TunnelError("secret_in_argv", "远程连接通道启动参数中不能包含凭据")
 
 
 class NoopTunnelProvider:

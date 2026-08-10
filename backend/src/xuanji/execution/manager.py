@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from typing import Mapping
 
@@ -18,6 +20,9 @@ from xuanji.nodes import (
     NoopTunnelProvider,
     TunnelError,
     TunnelProvider,
+    TaskDispatch,
+    TaskInput,
+    TaskOutputPolicy,
 )
 from xuanji.scheduler import SchedulerService, ready_tasks, transition_run, transition_task
 from xuanji.storage.database import Database
@@ -51,7 +56,7 @@ class ExecutionManager:
         tunnels: TunnelProvider | None = None,
     ) -> None:
         if poll_interval <= 0:
-            raise ValueError("poll_interval must be positive")
+            raise ValueError("轮询间隔必须大于零")
         self.database = database
         self.artifacts = artifacts
         self.node_clients = dict(node_clients)
@@ -146,9 +151,9 @@ class ExecutionManager:
             task = self._task(workflow, task_id)
             previous = self.runs.latest_attempts(run_id).get(task_id)
             if previous is None or previous.status not in _FAILURE_TASKS:
-                raise ValueError(f"task {task_id} is not retryable")
+                raise ValueError(f"任务 {task_id} 当前不可重试")
             if previous.attempt >= task.retry_policy.max_attempts:
-                raise ValueError(f"task {task_id} exhausted retries")
+                raise ValueError(f"任务 {task_id} 已用完重试次数")
             attempt = self._new_attempt(run_id, task, previous.attempt + 1)
             self.runs.save_attempt(attempt)
             self._event(run_id, "task.attempt_created", attempt)
@@ -203,6 +208,7 @@ class ExecutionManager:
         await self._reconcile_active(run, workflow)
         run = self._run(run_id)
         if run.status is RunStatus.RUNNING:
+            await self._dispatch_due_retries(run, workflow)
             await self._dispatch_ready(run, workflow)
         elif run.status is RunStatus.CANCELLING:
             self._settle_cancellation(run)
@@ -232,6 +238,24 @@ class ExecutionManager:
             await asyncio.gather(*reconciliations)
 
     async def _reconcile_attempt(self, run: Run, workflow: Workflow, attempt: TaskAttempt) -> None:
+        task = self._task(workflow, attempt.task_id)
+        if (
+            attempt.status is TaskStatus.RUNNING
+            and attempt.started_at is not None
+            and datetime.now(timezone.utc) - attempt.started_at
+            >= timedelta(seconds=task.execution_policy.timeout_seconds)
+        ):
+            try:
+                client = await self._client_for_attempt(attempt)
+                await client.cancel_task(attempt.id)
+            except (NodeClientError, TunnelError):
+                pass
+            attempt.error = {
+                "code": "task_timeout",
+                "message": f"任务执行超过 {task.execution_policy.timeout_seconds} 秒",
+            }
+            self._set_attempt_status(attempt, TaskStatus.FAILED)
+            return
         try:
             client = await self._client_for_attempt(attempt)
             remote = await client.get_task(attempt.id)
@@ -241,6 +265,7 @@ class ExecutionManager:
             else:
                 self._block_attempt(attempt, error)
             return
+        await self._sync_logs(workflow, run, attempt, client)
         if remote.status in {"running", "pending", "queued"}:
             if attempt.status is TaskStatus.CANCELLING:
                 await self._cancel_remote(attempt)
@@ -254,16 +279,62 @@ class ExecutionManager:
             await self._cancel_remote(attempt)
             return
         if remote.status == "failed":
-            attempt.error = {"code": "remote_task_failed", "message": remote.error or "remote task failed"}
+            attempt.error = {"code": "remote_task_failed", "message": remote.error or "远程任务执行失败"}
             self._set_attempt_status(attempt, TaskStatus.FAILED)
             return
         if remote.status == "success":
             self._set_attempt_status(attempt, TaskStatus.COLLECTING)
-            task = self._task(workflow, attempt.task_id)
             await self._collect(run, workflow, task, attempt)
             return
-        attempt.error = {"code": "node_protocol_error", "message": f"unknown remote status: {remote.status}"}
+        attempt.error = {"code": "node_protocol_error", "message": f"节点返回未知状态：{remote.status}"}
         self._set_attempt_status(attempt, TaskStatus.BLOCKED)
+
+    async def _sync_logs(
+        self,
+        workflow: Workflow,
+        run: Run,
+        attempt: TaskAttempt,
+        client: NodeClient,
+    ) -> None:
+        path = self.artifacts.resolve_project_path(
+            workflow.project_id,
+            f"runs/{run.id}/tasks/{attempt.task_id}/logs.jsonl",
+        )
+        offset = 0
+        if path.is_file():
+            with path.open(encoding="utf-8") as stream:
+                offset = sum(1 for _ in stream)
+        try:
+            page = await client.logs(attempt.id, offset)
+        except NodeClientError:
+            return
+        if not page.events:
+            return
+        with path.open("a", encoding="utf-8") as stream:
+            for event in page.events:
+                stream.write(json.dumps(event, ensure_ascii=False) + "\n")
+        self.events.append(
+            run.id,
+            "task.logs_appended",
+            {"run_id": run.id, "task_id": attempt.task_id, "count": len(page.events)},
+        )
+
+    async def _dispatch_due_retries(self, run: Run, workflow: Workflow) -> None:
+        now = datetime.now(timezone.utc)
+        for task in workflow.tasks:
+            previous = self.runs.latest_attempts(run.id).get(task.id)
+            if (
+                previous is None
+                or previous.status not in {TaskStatus.FAILED, TaskStatus.ARTIFACT_FAILED, TaskStatus.DISPATCH_FAILED}
+                or previous.attempt >= task.retry_policy.max_attempts
+                or previous.completed_at is None
+                or now < previous.completed_at + timedelta(seconds=task.retry_policy.delay_seconds)
+            ):
+                continue
+            attempt = self._new_attempt(run.id, task, previous.attempt + 1)
+            self.runs.save_attempt(attempt)
+            self._event(run.id, "task.attempt_created", attempt, automatic=True)
+            await self._dispatch(run, workflow, task, attempt)
 
     async def _dispatch(self, run: Run, workflow: Workflow, task: Task, attempt: TaskAttempt) -> None:
         if attempt.status is TaskStatus.BLOCKED:
@@ -292,7 +363,7 @@ class ExecutionManager:
             if node is None:
                 if self.scheduler.select_node(task, configured_nodes) is not None:
                     return
-                attempt.error = {"code": "no_eligible_node", "message": "no eligible node"}
+                attempt.error = {"code": "no_eligible_node", "message": "没有符合调度条件的可用节点"}
                 self._set_attempt_status(attempt, TaskStatus.BLOCKED)
                 return
             attempt.node_id = node.id
@@ -300,12 +371,65 @@ class ExecutionManager:
         self.artifacts.create_task(workflow.project_id, run.id, task.id, task.prompt or task.description or task.title)
         try:
             client = await self._client_for_attempt(attempt, node=node)
-            remote = await client.create_task(task.prompt or task.description or task.title, attempt.id)
+            staged_inputs: list[tuple[TaskInput, bytes]] = []
+            for artifact in self.artifact_repository.list_for_run(run.id):
+                if artifact.task_id not in task.dependencies:
+                    continue
+                marker = "/artifacts/"
+                output_path = (
+                    artifact.relative_path.split(marker, 1)[1]
+                    if marker in artifact.relative_path
+                    else PurePosixPath(artifact.relative_path).name
+                )
+                input_path = f"{artifact.task_id}/{output_path}"
+                local_path = self.artifacts.resolve_project_path(workflow.project_id, artifact.relative_path)
+                body = local_path.read_bytes()
+                if len(body) != artifact.size:
+                    raise ArtifactVerificationError(f"输入产物大小不匹配：{artifact.relative_path}")
+                if hashlib.sha256(body).hexdigest() != artifact.sha256:
+                    raise ArtifactVerificationError(f"输入产物哈希不匹配：{artifact.relative_path}")
+                staged_inputs.append(
+                    (
+                        TaskInput(
+                            source_task_id=artifact.task_id,
+                            path=input_path,
+                            size=artifact.size,
+                            sha256=artifact.sha256,
+                        ),
+                        body,
+                    )
+                )
+            dispatch = TaskDispatch(
+                idempotency_key=attempt.id,
+                instruction=task.prompt or task.description or task.title,
+                project_id=workflow.project_id,
+                run_id=run.id,
+                task_id=task.id,
+                inputs=[item for item, _ in staged_inputs],
+                output_policy=TaskOutputPolicy(
+                    mode="strict" if task.expected_outputs else "discover",
+                    expected=[output.path for output in task.expected_outputs],
+                ),
+            )
+            remote = await client.create_task(dispatch)
+            for item, body in staged_inputs:
+                await client.upload_input(
+                    remote.id,
+                    item.path,
+                    body,
+                    size=item.size,
+                    sha256=item.sha256,
+                )
+            remote = await client.start_task(remote.id)
+        except (ArtifactVerificationError, OSError) as error:
+            attempt.error = {"code": "input_verification_failed", "message": str(error)}
+            self._set_attempt_status(attempt, TaskStatus.ARTIFACT_FAILED)
+            return
         except (NodeClientError, TunnelError) as error:
             self._block_attempt(attempt, error)
             return
         if remote.id != attempt.id:
-            attempt.error = {"code": "node_protocol_error", "message": "node returned a mismatched dispatch id"}
+            attempt.error = {"code": "node_protocol_error", "message": "节点返回的派发 ID 不匹配"}
             self._set_attempt_status(attempt, TaskStatus.BLOCKED)
             return
         attempt.error = None
@@ -323,7 +447,7 @@ class ExecutionManager:
             expected = {output.path for output in task.expected_outputs}
             received = {entry.path for entry in remote_manifest.artifacts}
             if expected and expected != received:
-                raise ArtifactVerificationError("remote manifest does not match expected outputs")
+                raise ArtifactVerificationError("远程产物清单与预期产出不一致")
             entries = [
                 ArtifactEntry(
                     task_id=task.id,
@@ -335,11 +459,11 @@ class ExecutionManager:
                 for entry in remote_manifest.artifacts
             ]
             if not entries:
-                raise ArtifactVerificationError("remote manifest is empty")
+                raise ArtifactVerificationError("远程产物清单为空")
             for entry in entries:
                 relative = PurePosixPath(entry.path)
                 if relative.is_absolute() or ".." in relative.parts:
-                    raise ArtifactVerificationError(f"unsafe artifact path: {entry.path}")
+                    raise ArtifactVerificationError(f"产物路径不安全：{entry.path}")
                 await self.artifacts.download_verified_artifact(
                     workflow.project_id, run.id, task.id, attempt.id, entry, client
                 )
@@ -426,7 +550,12 @@ class ExecutionManager:
         can_progress = bool(ready_tasks(workflow, attempts, run.status, lambda _: True))
         has_active = any(attempt.status in _ACTIVE_TASKS for attempt in attempts.values())
         has_failure = any(attempt.status in _FAILURE_TASKS for attempt in attempts.values())
-        if has_failure and not has_active and not can_progress:
+        has_pending_retry = any(
+            attempt.status in {TaskStatus.FAILED, TaskStatus.ARTIFACT_FAILED, TaskStatus.DISPATCH_FAILED}
+            and attempt.attempt < self._task(workflow, task_id).retry_policy.max_attempts
+            for task_id, attempt in attempts.items()
+        )
+        if has_failure and not has_active and not can_progress and not has_pending_retry:
             self._set_run_status(run, RunStatus.BLOCKED)
 
     def _restore_transient_attempts(self, run_id: str) -> None:
@@ -541,7 +670,7 @@ class ExecutionManager:
 
     def _client(self, node_id: str | None) -> NodeClient:
         if node_id is None or node_id not in self.node_clients:
-            raise NodeProtocolError("node_protocol_error", "node client is unavailable")
+            raise NodeProtocolError("node_protocol_error", "节点客户端当前不可用")
         return self.node_clients[node_id]
 
     async def _client_for_attempt(
@@ -554,7 +683,7 @@ class ExecutionManager:
         if cached is not None:
             return cached
         if attempt.node_id is None and node is None:
-            raise NodeProtocolError("node_protocol_error", "node client is unavailable")
+            raise NodeProtocolError("node_protocol_error", "节点客户端当前不可用")
         node_id = node.id if node is not None else attempt.node_id
         base = self._client(node_id)
         resolved = node or self.nodes.get(node_id or "")

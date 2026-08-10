@@ -78,9 +78,9 @@ RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
 
 def ensure_task_transition(current: TaskStatus, target: TaskStatus) -> None:
     if target not in TASK_TRANSITIONS[current]:
-        raise ValueError(f"Illegal task status transition: {current.value} -> {target.value}")
+        raise ValueError(f"不允许的任务状态转换：{current.value} → {target.value}")
 
 
 def ensure_run_transition(current: RunStatus, target: RunStatus) -> None:
     if target not in RUN_TRANSITIONS[current]:
-        raise ValueError(f"Illegal run status transition: {current.value} -> {target.value}")
+        raise ValueError(f"不允许的运行状态转换：{current.value} → {target.value}")

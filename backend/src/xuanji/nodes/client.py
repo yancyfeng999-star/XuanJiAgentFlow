@@ -15,6 +15,7 @@ from .protocol import (
     NodeHealth,
     NodeLogPage,
     NodeTask,
+    TaskDispatch,
 )
 
 Message = TypeVar("Message", bound=BaseModel)
@@ -77,13 +78,52 @@ class NodeClient:
     async def capabilities(self) -> dict[str, Any]:
         return await self._request_json("GET", "/v1/capabilities")
 
-    async def create_task(self, goal: str, idempotency_key: str) -> NodeTask:
-        return await self._request(
+    async def create_task(
+        self,
+        dispatch: TaskDispatch | str,
+        idempotency_key: str | None = None,
+    ) -> NodeTask:
+        legacy_call = isinstance(dispatch, str)
+        if legacy_call:
+            if idempotency_key is None:
+                raise ValueError("幂等键不能为空")
+            dispatch = TaskDispatch(
+                idempotency_key=idempotency_key,
+                instruction=dispatch,
+                project_id="legacy",
+                run_id="legacy",
+                task_id=idempotency_key,
+            )
+        created = await self._request(
             "POST",
             "/v1/tasks",
             NodeTask,
-            json={"goal": goal, "idempotency_key": idempotency_key},
+            json=dispatch.model_dump(mode="json"),
         )
+        return await self.start_task(created.id) if legacy_call and created.status == "queued" else created
+
+    async def upload_input(self, task_id: str, path: str, body: bytes, *, size: int, sha256: str) -> None:
+        encoded_path = quote(path, safe="/")
+        response = await self._raw_request(
+            "PUT",
+            f"/v1/tasks/{task_id}/inputs/{encoded_path}",
+            content=body,
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/octet-stream",
+                "X-Input-Size": str(size),
+                "X-Input-SHA256": sha256,
+            },
+        )
+        try:
+            data = response.json()
+            if data.get("path") != path or data.get("size") != size or data.get("sha256") != sha256:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError):
+            raise NodeProtocolError("node_protocol_error", "节点返回的输入回执无效") from None
+
+    async def start_task(self, task_id: str) -> NodeTask:
+        return await self._request("POST", f"/v1/tasks/{task_id}/start", NodeTask)
 
     async def get_task(self, task_id: str) -> NodeTask:
         return await self._request("GET", f"/v1/tasks/{task_id}", NodeTask)
@@ -113,11 +153,11 @@ class NodeClient:
         except (KeyError, ValueError, TypeError):
             raise NodeProtocolError(
                 "node_protocol_error",
-                "node returned an invalid artifact",
+                "节点返回的产物无效",
             ) from None
         body = response.content
         if len(body) != size or hashlib.sha256(body).hexdigest() != expected_sha256:
-            raise NodeProtocolError("node_protocol_error", "node returned an invalid artifact")
+            raise NodeProtocolError("node_protocol_error", "节点返回的产物无效")
         return NodeArtifactDownload(body=body, size=size, sha256=expected_sha256)
 
     @asynccontextmanager
@@ -143,7 +183,7 @@ class NodeClient:
                 except (httpx.HTTPError, KeyError, ValueError, TypeError):
                     raise NodeProtocolError(
                         "node_protocol_error",
-                        "node returned an invalid artifact",
+                        "节点返回的产物无效",
                     ) from None
 
                 async def verified_body() -> AsyncIterator[bytes]:
@@ -156,7 +196,7 @@ class NodeClient:
                     if received != size or digest.hexdigest() != expected_sha256:
                         raise NodeProtocolError(
                             "node_protocol_error",
-                            "node returned an invalid artifact",
+                            "节点返回的产物无效",
                         )
 
                 yield NodeArtifactStream(
@@ -165,9 +205,9 @@ class NodeClient:
                     sha256=expected_sha256,
                 )
         except httpx.TimeoutException:
-            raise NodeTimeoutError("node_timeout", "node request timed out") from None
+            raise NodeTimeoutError("node_timeout", "执行节点请求超时") from None
         except httpx.RequestError:
-            raise NodeConnectionError("node_connection_error", "node connection failed") from None
+            raise NodeConnectionError("node_connection_error", "无法连接执行节点") from None
         finally:
             if owns_client:
                 await client.aclose()
@@ -187,18 +227,18 @@ class NodeClient:
             response.raise_for_status()
             return response
         except httpx.TimeoutException:
-            raise NodeTimeoutError("node_timeout", "node request timed out") from None
+            raise NodeTimeoutError("node_timeout", "执行节点请求超时") from None
         except httpx.RequestError:
-            raise NodeConnectionError("node_connection_error", "node connection failed") from None
+            raise NodeConnectionError("node_connection_error", "无法连接执行节点") from None
         except httpx.HTTPStatusError:
-            raise NodeProtocolError("node_protocol_error", "node returned an invalid response") from None
+            raise NodeProtocolError("node_protocol_error", "执行节点返回了无效响应") from None
 
     @staticmethod
     def _artifact_headers(response: httpx.Response) -> tuple[int, str]:
         size = int(response.headers["X-Artifact-Size"])
         sha256 = response.headers["X-Artifact-SHA256"]
         if size < 0 or len(sha256) != 64 or any(character not in "0123456789abcdef" for character in sha256):
-            raise ValueError("invalid artifact headers")
+            raise ValueError("产物响应头无效")
         return size, sha256
 
     async def _request(
@@ -212,7 +252,7 @@ class NodeClient:
         try:
             return model.model_validate(data)
         except ValidationError:
-            raise NodeProtocolError("node_protocol_error", "node returned an invalid response") from None
+            raise NodeProtocolError("node_protocol_error", "执行节点返回了无效响应") from None
 
     async def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         request = {
@@ -227,9 +267,9 @@ class NodeClient:
                 async with httpx.AsyncClient() as client:
                     response = await client.request(method, f"{self._base_url}{path}", **request)
         except httpx.TimeoutException:
-            raise NodeTimeoutError("node_timeout", "node request timed out") from None
+            raise NodeTimeoutError("node_timeout", "执行节点请求超时") from None
         except httpx.RequestError:
-            raise NodeConnectionError("node_connection_error", "node connection failed") from None
+            raise NodeConnectionError("node_connection_error", "无法连接执行节点") from None
 
         try:
             response.raise_for_status()
@@ -238,4 +278,4 @@ class NodeClient:
                 raise TypeError
             return data
         except (httpx.HTTPError, ValueError, TypeError):
-            raise NodeProtocolError("node_protocol_error", "node returned an invalid response") from None
+            raise NodeProtocolError("node_protocol_error", "执行节点返回了无效响应") from None

@@ -19,10 +19,10 @@ def _run_context(request: Request, run_id: str):
     services = _services(request)
     run = services.runs.get(run_id)
     if run is None:
-        raise APIError(404, "run_not_found", "run not found", {"run_id": run_id})
+        raise APIError(404, "run_not_found", "运行记录不存在", {"run_id": run_id})
     workflow = services.workflows.get(run.workflow_id)
     if workflow is None:
-        raise APIError(404, "workflow_not_found", "workflow not found")
+        raise APIError(404, "workflow_not_found", "工作流不存在")
     return services, run, workflow
 
 
@@ -53,13 +53,13 @@ async def download_artifact(
         None,
     )
     if artifact is None:
-        raise APIError(404, "artifact_not_found", "artifact not found")
+        raise APIError(404, "artifact_not_found", "产物不存在")
     relative = PurePosixPath(path)
     if relative.is_absolute() or ".." in relative.parts:
-        raise APIError(404, "artifact_not_found", "artifact not found")
+        raise APIError(404, "artifact_not_found", "产物不存在")
     file_path = services.artifacts.resolve_project_path(workflow.project_id, path)
     if not file_path.is_file():
-        raise APIError(404, "artifact_not_found", "artifact not found")
+        raise APIError(404, "artifact_not_found", "产物不存在")
     digest = hashlib.sha256()
     size = 0
     with file_path.open("rb") as stream:
@@ -70,7 +70,7 @@ async def download_artifact(
         raise APIError(
             409,
             "artifact_integrity_error",
-            "artifact failed integrity verification",
+            "产物完整性校验失败",
             {"path": path},
         )
     return FileResponse(file_path, media_type=artifact.media_type, filename=file_path.name)

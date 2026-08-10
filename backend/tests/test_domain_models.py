@@ -82,7 +82,7 @@ def test_state_transition_guards_reject_illegal_transitions():
     ensure_task_transition(TaskStatus.PENDING, TaskStatus.READY)
     ensure_run_transition(RunStatus.PENDING, RunStatus.RUNNING)
 
-    with pytest.raises(ValueError, match="Illegal task status transition"):
+    with pytest.raises(ValueError, match="不允许的任务状态转换"):
         ensure_task_transition(TaskStatus.SUCCESS, TaskStatus.RUNNING)
-    with pytest.raises(ValueError, match="Illegal run status transition"):
+    with pytest.raises(ValueError, match="不允许的运行状态转换"):
         ensure_run_transition(RunStatus.SUCCESS, RunStatus.RUNNING)

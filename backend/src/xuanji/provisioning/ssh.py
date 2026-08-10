@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import base64
+import shlex
 import subprocess
+import sys
+import tarfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,7 +97,7 @@ class SSHRunner:
         input_text = None
         if api_key:
             cmd += " && IFS= read -r api_key && hermes config set api_server.api_key \"$api_key\""
-            input_text = api_key
+            input_text = f"{api_key}\n"
         cmd += " && hermes gateway start 2>&1"
         code, out, err = self.run(cmd, timeout=30, input_text=input_text)
         return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
@@ -107,7 +112,9 @@ class SSHRunner:
         return {"online": online, "output": out[:500]}
 
     def deploy_node_agent(self, local_package_path: str, remote_dir: str = "~/.xuanji-node") -> dict:
-        # Upload package
+        code, _, err = self.run(f"mkdir -p {remote_dir}")
+        if code != 0:
+            return {"success": False, "error": err[-500:]}
         scp_args = [
             "scp",
             "-o", "StrictHostKeyChecking=yes",
@@ -123,14 +130,64 @@ class SSHRunner:
 
         # Extract and install
         code, out, err = self.run(
-            f"mkdir -p {remote_dir} && cd {remote_dir} && tar xzf package.tar.gz && pip install -e . 2>&1",
+            f"mkdir -p {remote_dir} && cd {remote_dir} && tar xzf package.tar.gz && "
+            "python3 -m venv .venv && .venv/bin/python -m pip install -e . 2>&1",
             timeout=120,
         )
         return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
 
+    def start_node_agent(
+        self,
+        api_key: str,
+        *,
+        hermes_port: int = 8642,
+        node_port: int = 8765,
+        remote_dir: str = "~/.xuanji-node",
+    ) -> dict:
+        unit = f"""[Unit]
+Description=Xuanji Node Agent
+After=network-online.target
+
+[Service]
+Type=simple
+User={self.host.user}
+WorkingDirectory=%h/.xuanji-node
+EnvironmentFile=%h/.xuanji-node/node.env
+ExecStart=%h/.xuanji-node/.venv/bin/python -m uvicorn app:app --app-dir %h/.xuanji-node --host 127.0.0.1 --port {node_port}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+"""
+        encoded_unit = base64.b64encode(unit.encode("utf-8")).decode("ascii")
+        encoded_token = base64.b64encode(api_key.encode("utf-8")).decode("ascii")
+        command = (
+            f"mkdir -p {remote_dir} && IFS= read -r token_b64 && "
+            f"token=$(printf %s \"$token_b64\" | base64 -d) && "
+            f"printf 'XUANJI_NODE_TOKEN=%s\\nHERMES_MODE=cli\\nHERMES_API_KEY=%s\\nHERMES_API_URL=http://127.0.0.1:{hermes_port}\\n' "
+            f"\"$token\" \"$token\" > {remote_dir}/node.env && chmod 600 {remote_dir}/node.env && "
+            f"printf %s {shlex.quote(encoded_unit)} | base64 -d | sudo tee /etc/systemd/system/xuanji-node.service >/dev/null && "
+            "sudo systemctl daemon-reload && sudo systemctl enable xuanji-node.service && "
+            "sudo systemctl restart xuanji-node.service"
+        )
+        code, out, err = self.run(command, timeout=60, input_text=f"{encoded_token}\n")
+        return {"success": code == 0, "output": out[-1000:], "error": err[-500:] if code != 0 else None}
+
+    def check_node_agent(self, port: int = 8765, api_key: str = "") -> dict:
+        encoded_token = base64.b64encode(api_key.encode("utf-8")).decode("ascii")
+        command = (
+            "IFS= read -r token_b64 && token=$(printf %s \"$token_b64\" | base64 -d) && "
+            f"curl -sf -H \"Authorization: Bearer $token\" http://127.0.0.1:{port}/v1/health "
+            "2>&1 || echo OFFLINE"
+        )
+        code, out, _ = self.run(command, input_text=f"{encoded_token}\n")
+        online = "OFFLINE" not in out and code == 0
+        return {"online": online, "output": out[:500]}
+
 
 def provisioning_succeeded(steps: list[dict]) -> bool:
-    if not steps or steps[-1].get("step") != "verify_api_server":
+    if not steps or steps[-1].get("step") != "verify_node_agent":
         return False
     if steps[-1].get("online") is not True:
         return False
@@ -143,8 +200,33 @@ def provisioning_succeeded(steps: list[dict]) -> bool:
 class ProvisioningService:
     """High-level provisioning workflow."""
 
-    def __init__(self, *, known_hosts_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        known_hosts_path: str | Path | None = None,
+        node_agent_dir: str | Path | None = None,
+    ) -> None:
         self.known_hosts_path = Path(known_hosts_path) if known_hosts_path else None
+        self.node_agent_dir = Path(node_agent_dir) if node_agent_dir else self._default_node_agent_dir()
+
+    @staticmethod
+    def _default_node_agent_dir() -> Path:
+        if getattr(sys, "frozen", False):
+            return Path(getattr(sys, "_MEIPASS")) / "node-agent"
+        return Path(__file__).resolve().parents[4] / "node-agent"
+
+    def _package_node_agent(self) -> str:
+        required = ("app.py", "executor.py", "pyproject.toml")
+        if not all((self.node_agent_dir / name).is_file() for name in required):
+            raise FileNotFoundError(f"节点代理安装包缺失：{self.node_agent_dir}")
+        descriptor, archive_path = tempfile.mkstemp(prefix="xuanji-node-", suffix=".tar.gz")
+        Path(archive_path).unlink(missing_ok=True)
+        import os
+        os.close(descriptor)
+        with tarfile.open(archive_path, "w:gz") as archive:
+            for name in required:
+                archive.add(self.node_agent_dir / name, arcname=name)
+        return archive_path
 
     def _create_runner(self, host: SSHHost) -> SSHRunner:
         return SSHRunner(host, known_hosts_path=self.known_hosts_path)
@@ -178,8 +260,30 @@ class ProvisioningService:
         start = runner.start_api_server(hermes_port, api_key)
         steps.append({"step": "start_api_server", **start})
 
-        # Step 6: Verify API server
+        # Step 6: Verify Hermes API server
         verify = runner.check_api_server(hermes_port)
         steps.append({"step": "verify_api_server", **verify})
+        if not verify["online"]:
+            return steps
+
+        # Step 7: Deploy and install the protocol adapter used by Coordinator.
+        package_path = self._package_node_agent()
+        try:
+            deploy = runner.deploy_node_agent(package_path)
+        finally:
+            Path(package_path).unlink(missing_ok=True)
+        steps.append({"step": "deploy_node_agent", **deploy})
+        if not deploy["success"]:
+            return steps
+
+        # Step 8: Install/restart the Node Agent service without exposing the token on argv.
+        start_node = runner.start_node_agent(api_key, hermes_port=hermes_port, node_port=8765)
+        steps.append({"step": "start_node_agent", **start_node})
+        if not start_node["success"]:
+            return steps
+
+        # Step 9: Verify the actual Coordinator protocol endpoint.
+        verify_node = runner.check_node_agent(8765, api_key)
+        steps.append({"step": "verify_node_agent", **verify_node})
 
         return steps

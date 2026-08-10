@@ -16,7 +16,7 @@ def transition_task(current: TaskStatus, target: TaskStatus) -> TaskStatus:
     if target not in TASK_TRANSITIONS[current]:
         raise StateTransitionError(
             "illegal_task_transition",
-            f"illegal task status transition: {current.value} -> {target.value}",
+            f"不允许的任务状态转换：{current.value} → {target.value}",
             {"current": current.value, "target": target.value},
         )
     return target
@@ -26,7 +26,7 @@ def transition_run(current: RunStatus, target: RunStatus) -> RunStatus:
     if target not in RUN_TRANSITIONS[current]:
         raise StateTransitionError(
             "illegal_run_transition",
-            f"illegal run status transition: {current.value} -> {target.value}",
+            f"不允许的运行状态转换：{current.value} → {target.value}",
             {"current": current.value, "target": target.value},
         )
     return target

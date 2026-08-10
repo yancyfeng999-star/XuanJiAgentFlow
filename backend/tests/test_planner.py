@@ -9,7 +9,7 @@ from xuanji.planner import (
     PlannerProvider,
     PlannerService,
 )
-from xuanji.security import CredentialVault
+from xuanji.credentials import LocalCredentialStore
 
 
 def workflow_output(
@@ -42,16 +42,15 @@ def openai_response(content: str, status_code: int = 200) -> httpx.Response:
     )
 
 
-def make_vault(tmp_path, key: str = "planner.deepseek.api_key") -> CredentialVault:
-    vault = CredentialVault(tmp_path / "credentials.vault")
-    vault.initialize("master password")
-    vault.set(key, "vault-only-secret")
-    return vault
+def make_credentials(tmp_path, key: str = "planner.deepseek.api_key") -> LocalCredentialStore:
+    credentials = LocalCredentialStore(tmp_path / "credentials.json")
+    credentials.set(key, "vault-only-secret")
+    return credentials
 
 
 @pytest.mark.asyncio
 async def test_openai_provider_uses_configured_vault_key_and_deepseek_config(tmp_path):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
     requests: list[httpx.Request] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -60,7 +59,7 @@ async def test_openai_provider_uses_configured_vault_key_and_deepseek_config(tmp
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -76,12 +75,13 @@ async def test_openai_provider_uses_configured_vault_key_and_deepseek_config(tmp
     assert json.loads(requests[0].content) == {
         "messages": [{"role": "user", "content": "Plan this"}],
         "model": "deepseek-chat",
+        "response_format": {"type": "json_object"},
     }
 
 
 @pytest.mark.asyncio
 async def test_openai_provider_accepts_injected_client_and_mimo_base_url(tmp_path):
-    vault = make_vault(tmp_path, "planner.mimo.api_key")
+    vault = make_credentials(tmp_path, "planner.mimo.api_key")
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == "https://api.xiaomimimo.com/v1/chat/completions"
@@ -91,7 +91,7 @@ async def test_openai_provider_accepts_injected_client_and_mimo_base_url(tmp_pat
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.xiaomimimo.com/v1/",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.mimo.api_key",
         client=client,
     )
@@ -103,7 +103,7 @@ async def test_openai_provider_accepts_injected_client_and_mimo_base_url(tmp_pat
 
 @pytest.mark.asyncio
 async def test_planner_clears_code_fence_and_builds_valid_domain_workflow(tmp_path):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
     request_payloads: list[dict] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -112,7 +112,7 @@ async def test_planner_clears_code_fence_and_builds_valid_domain_workflow(tmp_pa
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -134,6 +134,8 @@ async def test_planner_clears_code_fence_and_builds_valid_domain_workflow(tmp_pa
     messages = request_payloads[0]["messages"]
     assert "Use local sources" in messages[-1]["content"]
     assert '"max_tasks": 3' in messages[-1]["content"]
+    assert "工作流数据结构" in messages[-1]["content"]
+    assert '"expected_outputs"' in messages[-1]["content"]
 
 
 @pytest.mark.asyncio
@@ -176,7 +178,7 @@ async def test_planner_clears_code_fence_and_builds_valid_domain_workflow(tmp_pa
     ids=["invalid-json", "schema-error", "dag-cycle"],
 )
 async def test_planner_repairs_invalid_output_once(tmp_path, invalid_output):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
     outputs = iter([invalid_output, workflow_output()])
     messages_seen: list[list[dict[str, str]]] = []
 
@@ -186,7 +188,7 @@ async def test_planner_repairs_invalid_output_once(tmp_path, invalid_output):
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com/v1",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -197,11 +199,12 @@ async def test_planner_repairs_invalid_output_once(tmp_path, invalid_output):
     assert workflow.id == "workflow_1"
     assert len(messages_seen) == 2
     assert invalid_output in messages_seen[1][-1]["content"]
+    assert "校验错误：" in messages_seen[1][-1]["content"]
 
 
 @pytest.mark.asyncio
 async def test_planner_stops_after_one_failed_repair_with_stable_error(tmp_path):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
     call_count = 0
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -211,7 +214,7 @@ async def test_planner_stops_after_one_failed_repair_with_stable_error(tmp_path)
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com/v1",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -221,20 +224,20 @@ async def test_planner_stops_after_one_failed_repair_with_stable_error(tmp_path)
         await service.plan("project_1", "Build report", "", {})
 
     assert exc_info.value.code == "planner_invalid_output"
-    assert str(exc_info.value) == "planner output is invalid after repair"
+    assert str(exc_info.value) == "规划器返回的工作流格式无效，自动修复后仍未通过校验"
     assert call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_openai_provider_maps_unauthorized_without_leaking_credentials(tmp_path, caplog):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, text="request rejected for vault-only-secret")
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com/v1",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -243,22 +246,22 @@ async def test_openai_provider_maps_unauthorized_without_leaking_credentials(tmp
         await provider.complete([], "deepseek-chat")
 
     assert exc_info.value.code == "planner_unauthorized"
-    assert str(exc_info.value) == "planner provider rejected credentials"
+    assert str(exc_info.value) == "规划器身份验证失败，请检查接口密钥"
     assert "vault-only-secret" not in str(exc_info.value)
     assert "vault-only-secret" not in caplog.text
-    assert "vault-only-secret" not in (tmp_path / "credentials.vault").read_text()
+    assert (tmp_path / "credentials.json").stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.asyncio
 async def test_openai_provider_maps_timeout_to_stable_error(tmp_path):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("upstream timeout includes vault-only-secret", request=request)
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com/v1",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -267,20 +270,20 @@ async def test_openai_provider_maps_timeout_to_stable_error(tmp_path):
         await provider.complete([], "deepseek-chat")
 
     assert exc_info.value.code == "planner_timeout"
-    assert str(exc_info.value) == "planner provider timed out"
+    assert str(exc_info.value) == "规划器服务请求超时"
     assert "vault-only-secret" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_openai_provider_maps_connection_error_without_leaking_credentials(tmp_path):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("failed with vault-only-secret", request=request)
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com/v1",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -294,7 +297,7 @@ async def test_openai_provider_maps_connection_error_without_leaking_credentials
 
 @pytest.mark.asyncio
 async def test_openai_provider_rejects_non_string_content(tmp_path):
-    vault = make_vault(tmp_path)
+    vault = make_credentials(tmp_path)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -304,7 +307,7 @@ async def test_openai_provider_rejects_non_string_content(tmp_path):
 
     provider = OpenAIChatCompletionsProvider(
         base_url="https://api.deepseek.com/v1",
-        credential_vault=vault,
+        credential_store=vault,
         credential_key="planner.deepseek.api_key",
         transport=httpx.MockTransport(handler),
     )
@@ -316,4 +319,4 @@ async def test_openai_provider_rejects_non_string_content(tmp_path):
 
 
 def test_planner_provider_protocol_describes_complete_interface():
-    assert "complete" in PlannerProvider.__protocol_attrs__
+    assert callable(getattr(PlannerProvider, "complete", None))

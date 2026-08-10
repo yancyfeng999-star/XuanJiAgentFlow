@@ -30,7 +30,7 @@ def _services(request: Request):
 def _project(request: Request, project_id: str) -> Project:
     project = _services(request).projects.get(project_id)
     if project is None:
-        raise APIError(404, "project_not_found", "project not found", {"project_id": project_id})
+        raise APIError(404, "project_not_found", "项目不存在", {"project_id": project_id})
     return project
 
 
@@ -46,7 +46,7 @@ async def create_project(payload: CreateProjectRequest, request: Request) -> dic
         raise APIError(
             400,
             "invalid_project_root",
-            str(error) or "project root is not allowed",
+            str(error) or "项目目录无效",
             {"root_path": str(root)},
         ) from None
     services.projects.create(project)
