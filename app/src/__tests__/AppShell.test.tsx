@@ -80,7 +80,7 @@ describe('Xuanji 2.0 workspace shell', () => {
     act(() => useWorkspaceStore.getState().selectTask('server-task'));
 
     expect(screen.getByRole('heading', { name: '服务端任务定义' })).toBeInTheDocument();
-    expect(screen.getByLabelText('任务 Prompt')).toHaveValue('只使用服务端返回的任务 Prompt。');
+    expect(screen.getByLabelText('任务指令')).toHaveValue('只使用服务端返回的任务 Prompt。');
   });
 
   it('shows run status and progress from the unified workspace store', async () => {

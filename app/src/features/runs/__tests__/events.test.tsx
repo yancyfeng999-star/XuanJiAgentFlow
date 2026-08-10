@@ -189,11 +189,6 @@ const client = {
   deleteNode: vi.fn(),
   diagnoseNode: vi.fn(),
   provisionNode: vi.fn(),
-  getSecurityStatus: vi.fn().mockResolvedValue({ status: 'unlocked' }),
-  initializeSecurity: vi.fn(),
-  unlockSecurity: vi.fn(),
-  lockSecurity: vi.fn(),
-  setCredential: vi.fn(),
   getPlannerConfig: vi.fn().mockResolvedValue({
     base_url: null, model: null, credential_key: null, credential_configured: false,
   }),
@@ -443,14 +438,14 @@ describe('ArtifactBrowser errors', () => {
     render(<ArtifactBrowser runId="run-1" taskId="research" />);
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
-    expect(screen.getByText('artifact_integrity_error')).toBeInTheDocument();
-    expect(screen.getByText('artifact failed integrity verification')).toBeInTheDocument();
+    expect(screen.getByText('加载失败')).toBeInTheDocument();
+    expect(screen.getByText('产物完整性校验失败')).toBeInTheDocument();
   });
 
   it('lists real artifacts for the selected task', async () => {
     render(<ArtifactBrowser runId="run-1" taskId="research" />);
     await waitFor(() => expect(screen.getByText(/research\.md/)).toBeInTheDocument());
-    expect(screen.getByText('12 B')).toBeInTheDocument();
+    expect(screen.getByText('12 字节')).toBeInTheDocument();
   });
 });
 
@@ -484,7 +479,7 @@ describe('RunControls', () => {
     fireEvent.click(screen.getByRole('button', { name: '暂停' }));
     await waitFor(() => expect(useWorkspaceStore.getState().error).toMatchObject({
       code: 'run_not_pausable',
-      message: 'run cannot be paused',
+      message: '当前运行不能暂停',
     }));
   });
 });

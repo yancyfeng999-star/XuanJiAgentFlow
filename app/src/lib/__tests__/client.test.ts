@@ -66,7 +66,7 @@ describe('CoordinatorClient', () => {
     expect(error).toMatchObject({
       status: 409,
       code: 'workflow_frozen',
-      message: 'reviewed workflows cannot be edited',
+      message: '工作流已审核冻结，不能继续编辑',
       details: { workflow_id: 'workflow-1' },
     });
   });

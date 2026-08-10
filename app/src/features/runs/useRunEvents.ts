@@ -15,11 +15,12 @@ export interface UseRunEventsResult {
   connected: boolean;
 }
 
-function toWebSocketUrl(baseUrl: string, runId: string, lastEventId: number): string {
+function toWebSocketUrl(baseUrl: string, runId: string, lastEventId: number, sessionToken: string | null): string {
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = `/ws/runs/${encodeURIComponent(runId)}`;
-  url.search = `last_event_id=${lastEventId}`;
+  url.searchParams.set('last_event_id', String(lastEventId));
+  if (sessionToken) url.searchParams.set('session_token', sessionToken);
   url.hash = '';
   return url.toString();
 }
@@ -64,6 +65,7 @@ function syncWorkspace(state: RunEventState) {
 
 export function useRunEvents(runId: string | null): UseRunEventsResult {
   const baseUrl = useWorkspaceStore((state) => state.coordinatorBaseUrl);
+  const sessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
   const [connected, setConnected] = useState(false);
   const [lastEventId, setLastEventId] = useState(0);
   const stateRef = useRef<RunEventState>(createInitialRunEventState());
@@ -89,7 +91,7 @@ export function useRunEvents(runId: string | null): UseRunEventsResult {
     const connect = () => {
       if (disposed) return;
       clearTimer();
-      const url = toWebSocketUrl(baseUrl, runId, stateRef.current.lastEventId);
+      const url = toWebSocketUrl(baseUrl, runId, stateRef.current.lastEventId, sessionToken);
       socket = new WebSocket(url);
 
       socket.onopen = () => {
@@ -139,7 +141,7 @@ export function useRunEvents(runId: string | null): UseRunEventsResult {
         socket.close();
       }
     };
-  }, [baseUrl, runId]);
+  }, [baseUrl, runId, sessionToken]);
 
   return { lastEventId, connected };
 }

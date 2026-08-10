@@ -13,6 +13,7 @@ export interface RuntimeInfo {
   port: number | null;
   dataDir: string | null;
   pid: number | null;
+  sessionToken?: string | null;
   error: string | null;
 }
 
@@ -22,11 +23,21 @@ const DEFAULT_INFO: RuntimeInfo = {
   port: null,
   dataDir: null,
   pid: null,
+  sessionToken: null,
   error: null,
 };
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function runtimeErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message: unknown }).message);
+    if (/[\u4e00-\u9fff]/.test(message)) return message;
+  }
+  if (error instanceof Error && /[\u4e00-\u9fff]/.test(error.message)) return error.message;
+  return '协调器启动失败，请重新启动应用';
 }
 
 export async function getCoordinatorStatus(): Promise<RuntimeInfo> {
@@ -43,6 +54,7 @@ export async function getCoordinatorStatus(): Promise<RuntimeInfo> {
       port: null,
       dataDir: null,
       pid: null,
+      sessionToken: null,
       error: null,
     };
   }
@@ -55,13 +67,14 @@ export async function getCoordinatorStatus(): Promise<RuntimeInfo> {
       port: info.port ?? null,
       dataDir: info.dataDir ?? null,
       pid: info.pid ?? null,
+      sessionToken: info.sessionToken ?? null,
       error: info.error ?? null,
     };
   } catch (error) {
     return {
       ...DEFAULT_INFO,
       status: 'failed',
-      error: error instanceof Error ? error.message : String(error),
+      error: runtimeErrorMessage(error),
     };
   }
 }
@@ -101,12 +114,12 @@ export async function waitForHealthyRuntime(
       return last;
     }
     if (last.status === 'failed') {
-      throw new Error(last.error ?? 'coordinator failed to start');
+      throw new Error(last.error ?? '协调器启动失败');
     }
     await sleep(intervalMs);
   }
 
-  throw new Error(last.error ?? 'timed out waiting for coordinator');
+  throw new Error(last.error ?? '等待协调器启动超时');
 }
 
 function sleep(ms: number): Promise<void> {

@@ -41,8 +41,7 @@ export default function TaskLog({ runId, taskId }: TaskLogProps) {
         setError({ code: reason.code, message: reason.message });
         setWorkspaceError({ code: reason.code, message: reason.message, details: reason.details });
       } else {
-        const message = reason instanceof Error ? reason.message : '加载日志失败';
-        setError({ code: 'client_error', message });
+        setError({ code: 'client_error', message: '加载日志失败，请重试' });
       }
     } finally {
       setLoading(false);
@@ -64,7 +63,7 @@ export default function TaskLog({ runId, taskId }: TaskLogProps) {
       </header>
       {error && (
         <div className="inline-error" role="alert">
-          <strong>{error.code}</strong>
+          <strong>加载失败</strong>
           <span>{error.message}</span>
         </div>
       )}

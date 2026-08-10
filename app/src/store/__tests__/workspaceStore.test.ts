@@ -43,7 +43,6 @@ const makeClient = () => ({
   reviewWorkflow: vi.fn().mockResolvedValue({ ...workflow, status: 'reviewed' }),
   createRun: vi.fn(), startRun: vi.fn(),
   listNodes: vi.fn().mockResolvedValue([]), createNode: vi.fn(), updateNode: vi.fn(), deleteNode: vi.fn(), diagnoseNode: vi.fn(), provisionNode: vi.fn(),
-  getSecurityStatus: vi.fn().mockResolvedValue({ status: 'uninitialized' }), initializeSecurity: vi.fn(), unlockSecurity: vi.fn(), lockSecurity: vi.fn(), setCredential: vi.fn(),
   getPlannerConfig: vi.fn().mockResolvedValue({ base_url: null, model: null, credential_key: null, credential_configured: false }), setPlannerConfig: vi.fn(),
 }) as unknown as CoordinatorClient;
 
@@ -325,20 +324,6 @@ describe('workspace store', () => {
     expect(store.getState().run).toBeNull();
     expect(store.getState().project).toBeNull();
     expect(store.getState().workflow).toBeNull();
-  });
-
-  it('does not let an older settings load overwrite a completed security action', async () => {
-    let resolveStatus!: (value: { status: 'uninitialized' }) => void;
-    vi.mocked(client.getSecurityStatus).mockReturnValue(new Promise((resolve) => { resolveStatus = resolve; }));
-    vi.mocked(client.initializeSecurity).mockResolvedValue({ status: 'unlocked' });
-    const store = createWorkspaceStore(() => client);
-
-    const loading = store.getState().loadSettings();
-    await store.getState().initializeSecurity('master-password');
-    resolveStatus({ status: 'uninitialized' });
-    await loading;
-
-    expect(store.getState().securityStatus).toBe('unlocked');
   });
 
   it('refreshes redacted planner configuration after saving credentials', async () => {

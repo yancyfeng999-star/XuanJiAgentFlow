@@ -1,6 +1,7 @@
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 
+import { agentTypeLabel, schedulingModeLabel } from '../../../lib/labels';
 import { useWorkspaceStore } from '../../../store/workspaceStore';
 import type { WorkflowNode } from '../nodeTypes';
 
@@ -24,15 +25,15 @@ export function TaskNode({ data, selected }: NodeProps<WorkflowNode>) {
   const status = attempt?.status ?? 'pending';
   return <button type="button" className={`task-node ${selected ? 'is-selected' : ''}`} aria-label={`选择任务：${data.title}`} onClick={() => selectTask(data.id)}>
     <Handle type="target" position={Position.Left} />
-    <div className="task-node__head"><strong>{data.title}</strong><span>{data.agent_type}</span></div>
+    <div className="task-node__head"><strong>{data.title}</strong><span>{agentTypeLabel(data.agent_type)}</span></div>
     <p>{data.description}</p>
     <div className="task-node__meta">
       <span>{statusLabels[status] ?? status}</span>
-      <span>{attempt?.node_id ? `节点 ${attempt.node_id}` : data.execution_policy.mode}</span>
+      <span>{attempt?.node_id ? `节点 ${attempt.node_id}` : schedulingModeLabel(data.execution_policy.mode)}</span>
     </div>
     <div className="task-node__files">
       输入 {data.dependencies.length} · 产出 {data.expected_outputs.length}
-      {attempt ? ` · #${attempt.attempt}` : ''}
+      {attempt ? ` · 第 ${attempt.attempt} 次` : ''}
     </div>
     <Handle type="source" position={Position.Right} />
   </button>;

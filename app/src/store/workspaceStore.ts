@@ -13,7 +13,6 @@ import {
   type PlannerConfigInput,
   type Project,
   type Run,
-  type SecurityStatus,
   type TaskAttempt,
   type Workflow,
   type WorkflowTask,
@@ -40,6 +39,7 @@ export interface MonitorUpdate {
 
 export interface WorkspaceState {
   coordinatorBaseUrl: string;
+  coordinatorSessionToken: string | null;
   projects: Project[];
   project: Project | null;
   workflow: Workflow | null;
@@ -51,12 +51,11 @@ export interface WorkspaceState {
   hermesNodes: HermesNode[];
   selectedTaskId: string | null;
   activePanel: WorkspacePanel;
-  securityStatus: SecurityStatus;
   plannerConfig: PlannerConfig;
   loading: boolean;
   error: WorkspaceError | null;
   canExecute: boolean;
-  setCoordinatorBaseUrl: (baseUrl: string) => void;
+  setCoordinatorBaseUrl: (baseUrl: string, sessionToken?: string | null) => void;
   selectTask: (taskId: string | null) => void;
   setActivePanel: (panel: WorkspacePanel) => void;
   setRunStatus: (status: RunStatus) => void;
@@ -84,12 +83,10 @@ export interface WorkspaceState {
   refreshRun: () => Promise<void>;
   loadNodes: () => Promise<void>;
   saveNode: (input: NodeInput) => Promise<void>;
+  diagnoseNode: (nodeId: string) => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
   provisionNode: (nodeId: string, hermesPort: number) => Promise<void>;
   loadSettings: () => Promise<void>;
-  initializeSecurity: (password: string) => Promise<void>;
-  unlockSecurity: (password: string) => Promise<void>;
-  lockSecurity: () => Promise<void>;
   savePlannerConfig: (input: PlannerConfigInput) => Promise<void>;
   resetWorkspace: () => void;
 }
@@ -103,6 +100,7 @@ const emptyPlannerConfig: PlannerConfig = {
 
 const initialState = {
   coordinatorBaseUrl: 'http://127.0.0.1:8000',
+  coordinatorSessionToken: null,
   projects: [] as Project[],
   project: null as Project | null,
   workflow: null as Workflow | null,
@@ -114,7 +112,6 @@ const initialState = {
   hermesNodes: [] as HermesNode[],
   selectedTaskId: null as string | null,
   activePanel: 'workflow' as WorkspacePanel,
-  securityStatus: 'uninitialized' as SecurityStatus,
   plannerConfig: emptyPlannerConfig,
   loading: false,
   error: null as WorkspaceError | null,
@@ -159,7 +156,9 @@ function workspaceError(error: unknown): WorkspaceError {
   }
   return {
     code: 'client_error',
-    message: error instanceof Error ? error.message : 'Unexpected workspace error',
+    message: error instanceof Error && /[\u4e00-\u9fff]/.test(error.message)
+      ? error.message
+      : '工作区操作失败，请重试',
     details: {},
   };
 }
@@ -249,10 +248,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
 
     return {
       ...initialState,
-      setCoordinatorBaseUrl: (coordinatorBaseUrl) => {
+      setCoordinatorBaseUrl: (coordinatorBaseUrl, coordinatorSessionToken = null) => {
         const normalized = coordinatorBaseUrl.trim().replace(/\/+$/, '');
         const current = get().coordinatorBaseUrl.trim().replace(/\/+$/, '');
-        if (normalized === current) {
+        if (normalized === current && coordinatorSessionToken === get().coordinatorSessionToken) {
           return;
         }
         settingsRequest += 1;
@@ -262,9 +261,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         workflowRequest += 1;
         nodesRequest += 1;
         nodeRequests.clear();
-        workspaceClient = createApiClient(normalized);
+        workspaceClient = createApiClient(normalized, coordinatorSessionToken);
         set({
           coordinatorBaseUrl: normalized,
+          coordinatorSessionToken,
           projects: [],
           project: null,
           workflow: null,
@@ -276,7 +276,6 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           hermesNodes: [],
           selectedTaskId: null,
           plannerConfig: { ...emptyPlannerConfig },
-          securityStatus: 'uninitialized',
           loading: false,
           error: null,
           canExecute: false,
@@ -662,6 +661,17 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (currentWorkspace(workspace) && nodeRequests.get(input.id) === request) fail(error);
         }
       },
+      diagnoseNode: async (nodeId) => {
+        const client = getClient();
+        set({ loading: true, error: null });
+        try {
+          await client.diagnoseNode(nodeId);
+          const hermesNodes = await client.listNodes();
+          set({ hermesNodes, loading: false });
+        } catch (error) {
+          fail(error);
+        }
+      },
       removeNode: async (nodeId) => {
         const client = getClient();
         const workspace = generation;
@@ -702,40 +712,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       loadSettings: async () => {
         const request = ++settingsRequest;
         try {
-          const [security, plannerConfig] = await Promise.all([
-            getClient().getSecurityStatus(),
-            getClient().getPlannerConfig(),
-          ]);
+          const plannerConfig = await getClient().getPlannerConfig();
           if (request === settingsRequest) {
-            set({ securityStatus: security.status, plannerConfig, error: null });
+            set({ plannerConfig, error: null });
           }
-        } catch (error) {
-          if (request === settingsRequest) fail(error);
-        }
-      },
-      initializeSecurity: async (password) => {
-        const request = ++settingsRequest;
-        try {
-          const security = await getClient().initializeSecurity(password);
-          if (request === settingsRequest) set({ securityStatus: security.status, error: null });
-        } catch (error) {
-          if (request === settingsRequest) fail(error);
-        }
-      },
-      unlockSecurity: async (password) => {
-        const request = ++settingsRequest;
-        try {
-          const security = await getClient().unlockSecurity(password);
-          if (request === settingsRequest) set({ securityStatus: security.status, error: null });
-        } catch (error) {
-          if (request === settingsRequest) fail(error);
-        }
-      },
-      lockSecurity: async () => {
-        const request = ++settingsRequest;
-        try {
-          const security = await getClient().lockSecurity();
-          if (request === settingsRequest) set({ securityStatus: security.status, error: null });
         } catch (error) {
           if (request === settingsRequest) fail(error);
         }

@@ -1,5 +1,4 @@
 export type WorkflowStatus = 'draft' | 'reviewed' | 'archived';
-export type SecurityStatus = 'uninitialized' | 'locked' | 'unlocked';
 export type NodeStatus = 'unknown' | 'online' | 'offline' | 'degraded';
 
 export interface Project {
@@ -192,12 +191,56 @@ export class CoordinatorError extends Error {
   readonly details: Record<string, unknown>;
 
   constructor(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
-    super(message);
+    super(localizedErrorMessage(code, message));
     this.name = 'CoordinatorError';
     this.status = status;
     this.code = code;
     this.details = details;
   }
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  artifact_integrity_error: '产物完整性校验失败',
+  artifact_not_found: '产物不存在',
+  internal_error: '服务器内部错误',
+  invalid_project_root: '项目目录无效',
+  invalid_session: '桌面会话已失效，请重新启动应用',
+  network_error: '无法连接协调器，请确认应用服务正在运行',
+  node_client_unavailable: '节点客户端当前不可用',
+  node_connection_error: '无法连接执行节点',
+  node_not_found: '执行节点不存在',
+  node_not_remote: '该节点未配置远程连接信息',
+  node_protocol_error: '执行节点返回了无效响应',
+  node_timeout: '执行节点请求超时',
+  no_eligible_node: '没有符合调度条件的可用节点',
+  planner_credentials_missing: '规划器接口密钥尚未配置',
+  planner_invalid_output: '规划器返回的工作流格式无效，自动修复后仍未通过校验',
+  planner_not_configured: '规划器尚未配置，请先前往“设置”完成配置',
+  planner_provider_error: '规划器服务请求失败',
+  planner_timeout: '规划器服务请求超时',
+  planner_unauthorized: '规划器身份验证失败，请检查接口密钥',
+  project_not_found: '项目不存在',
+  resource_in_use: '该资源仍被历史记录引用，无法删除',
+  resource_not_found: '资源不存在',
+  run_not_found: '运行记录不存在',
+  run_not_cancellable: '当前运行不能取消',
+  run_not_pausable: '当前运行不能暂停',
+  run_not_resumable: '当前运行不能恢复',
+  task_not_found: '任务不存在',
+  task_not_retryable: '当前任务不可重试',
+  task_not_skippable: '当前任务不可跳过',
+  task_timeout: '任务执行超时',
+  validation_error: '数据校验失败',
+  workflow_frozen: '工作流已审核冻结，不能继续编辑',
+  workflow_invalid: '工作流结构校验失败',
+  workflow_not_found: '工作流不存在',
+  workflow_not_reviewed: '工作流必须先审核，才能开始执行',
+};
+
+function localizedErrorMessage(code: string, message?: string): string {
+  if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
+  if (message && /[\u4e00-\u9fff]/.test(message)) return message;
+  return `操作失败（错误码：${code}）`;
 }
 
 export interface CoordinatorClient {
@@ -226,11 +269,6 @@ export interface CoordinatorClient {
   deleteNode(nodeId: string): Promise<void>;
   diagnoseNode(nodeId: string): Promise<Record<string, unknown>>;
   provisionNode(nodeId: string, hermesPort: number): Promise<{ node_id: string; completed: boolean; steps: Record<string, unknown>[] }>;
-  getSecurityStatus(): Promise<{ status: SecurityStatus }>;
-  initializeSecurity(password: string): Promise<{ status: SecurityStatus }>;
-  unlockSecurity(password: string): Promise<{ status: SecurityStatus }>;
-  lockSecurity(): Promise<{ status: SecurityStatus }>;
-  setCredential(key: string, value: string): Promise<void>;
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
 }
@@ -247,7 +285,7 @@ function isErrorEnvelope(value: unknown): value is CoordinatorErrorEnvelope {
     && !Array.isArray(envelope.details);
 }
 
-export function createApiClient(baseUrl: string): CoordinatorClient {
+export function createApiClient(baseUrl: string, sessionToken?: string | null): CoordinatorClient {
   const base = baseUrl.trim().replace(/\/+$/, '');
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -255,12 +293,14 @@ export function createApiClient(baseUrl: string): CoordinatorClient {
     try {
       response = await fetch(`${base}${path}`, {
         ...init,
-        headers: init?.body
-          ? { 'Content-Type': 'application/json', ...init.headers }
-          : init?.headers,
+        headers: {
+          ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(sessionToken ? { 'X-Xuanji-Session': sessionToken } : {}),
+          ...init?.headers,
+        },
       });
-    } catch (error) {
-      throw new CoordinatorError(0, 'network_error', error instanceof Error ? error.message : 'Coordinator connection failed');
+    } catch {
+      throw new CoordinatorError(0, 'network_error', '无法连接协调器，请确认应用服务正在运行');
     }
 
     const payload: unknown = response.status === 204 ? undefined : await response.json().catch(() => undefined);
@@ -268,7 +308,7 @@ export function createApiClient(baseUrl: string): CoordinatorClient {
       if (isErrorEnvelope(payload)) {
         throw new CoordinatorError(response.status, payload.error.code, payload.error.message, payload.error.details);
       }
-      throw new CoordinatorError(response.status, 'http_error', `Coordinator request failed (${response.status})`);
+      throw new CoordinatorError(response.status, 'http_error', `协调器请求失败（状态码 ${response.status}）`);
     }
     return payload as T;
   }
@@ -306,11 +346,6 @@ export function createApiClient(baseUrl: string): CoordinatorClient {
     deleteNode: (nodeId) => request(`/api/nodes/${id(nodeId)}`, json('DELETE')),
     diagnoseNode: (nodeId) => request(`/api/nodes/${id(nodeId)}/diagnose`, json('POST')),
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
-    getSecurityStatus: () => request('/api/security/status'),
-    initializeSecurity: (password) => request('/api/security/initialize', json('POST', { password })),
-    unlockSecurity: (password) => request('/api/security/unlock', json('POST', { password })),
-    lockSecurity: () => request('/api/security/lock', json('POST')),
-    setCredential: (key, value) => request(`/api/security/credentials/${id(key)}`, json('PUT', { value })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),
   };

@@ -36,7 +36,7 @@ export default function RunBar() {
     <header className="run-bar" aria-label="顶部运行栏">
       <div className="run-title">
         <strong>{project?.name ?? '未选择项目'}</strong>
-        <span>{workflow ? `工作流 v${workflow.version}` : '尚未规划'}</span>
+        <span>{workflow ? `工作流版本 ${workflow.version}` : '尚未规划'}</span>
         <span className="status">{runStatusLabels[status] ?? status}</span>
         <span className="muted" data-testid="ws-connected">
           {events.connected ? '实时已连接' : run ? '实时重连中' : '未运行'}

@@ -6,7 +6,7 @@ import { useWorkspaceStore, type WorkspacePanel } from '../../store/workspaceSto
 
 const items: Array<[typeof GitBranch, string, WorkspacePanel]> = [
   [GitBranch, '当前工作流', 'workflow'],
-  [Network, 'Hermes 节点', 'nodes'],
+  [Network, '执行节点', 'nodes'],
   [Settings2, '设置', 'settings'],
 ];
 
@@ -47,7 +47,7 @@ export default function ProjectRail() {
         <Sparkles size={20} />
         <div>
           <b>璇玑</b>
-          <small>XUANJI 2.0</small>
+          <small>智能任务协作 3.0</small>
         </div>
       </div>
 

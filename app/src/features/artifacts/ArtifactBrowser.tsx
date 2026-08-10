@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { CoordinatorError, type Artifact } from '../../lib/client';
+import { mediaTypeLabel } from '../../lib/labels';
 import { getWorkspaceClient, useWorkspaceStore } from '../../store/workspaceStore';
 
 export interface ArtifactBrowserProps {
@@ -9,9 +10,9 @@ export interface ArtifactBrowserProps {
 }
 
 function formatSize(size: number): string {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size < 1024) return `${size} 字节`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} 千字节`;
+  return `${(size / (1024 * 1024)).toFixed(1)} 兆字节`;
 }
 
 function fileName(path: string): string {
@@ -21,6 +22,7 @@ function fileName(path: string): string {
 
 export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps) {
   const baseUrl = useWorkspaceStore((state) => state.coordinatorBaseUrl);
+  const sessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +46,7 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
         } else {
           setError({
             code: 'client_error',
-            message: reason instanceof Error ? reason.message : '加载产物失败',
+            message: '加载产物失败，请重试',
           });
         }
         setArtifacts([]);
@@ -63,7 +65,7 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
       </header>
       {error && (
         <div className="inline-error" role="alert">
-          <strong>{error.code}</strong>
+          <strong>加载失败</strong>
           <span>{error.message}</span>
         </div>
       )}
@@ -72,14 +74,16 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
       ) : (
         <ul className="artifact-list">
           {artifacts.map((artifact) => {
-            const href = `${baseUrl.replace(/\/+$/, '')}/api/runs/${encodeURIComponent(runId)}/artifacts/download?path=${encodeURIComponent(artifact.relative_path)}`;
+            const query = new URLSearchParams({ path: artifact.relative_path });
+            if (sessionToken) query.set('session_token', sessionToken);
+            const href = `${baseUrl.replace(/\/+$/, '')}/api/runs/${encodeURIComponent(runId)}/artifacts/download?${query}`;
             return (
               <li key={artifact.id}>
                 <a href={href} target="_blank" rel="noreferrer">
                   {fileName(artifact.relative_path)}
                 </a>
                 <span>{formatSize(artifact.size)}</span>
-                <span className="muted">{artifact.media_type}</span>
+                <span className="muted">{mediaTypeLabel(artifact.media_type)}</span>
               </li>
             );
           })}

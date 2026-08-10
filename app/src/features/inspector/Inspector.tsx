@@ -3,6 +3,7 @@ import { Bot, Clock3, FileOutput, RotateCcw, Server } from 'lucide-react';
 import ArtifactBrowser from '../artifacts/ArtifactBrowser';
 import TaskLog from '../runs/TaskLog';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { agentTypeLabel, schedulingModeLabel, statusLabel } from '../../lib/labels';
 import TaskEditor from './TaskEditor';
 
 export default function Inspector() {
@@ -27,21 +28,21 @@ export default function Inspector() {
       ) : (
         <>
           <div className="inspector-head">
-            <span>{task.agent_type}</span>
+            <span>{agentTypeLabel(task.agent_type)}</span>
             <h2>{task.title}</h2>
             <p>{task.description}</p>
           </div>
           <TaskEditor task={task} />
           <section className="detail-grid">
-            <div><Bot size={15} /><span>Agent 类型</span><b>{task.agent_type}</b></div>
-            <div><Clock3 size={15} /><span>超时</span><b>{task.execution_policy.timeout_seconds}s</b></div>
+            <div><Bot size={15} /><span>任务类型</span><b>{agentTypeLabel(task.agent_type)}</b></div>
+            <div><Clock3 size={15} /><span>超时</span><b>{task.execution_policy.timeout_seconds} 秒</b></div>
             <div><RotateCcw size={15} /><span>最大尝试</span><b>{task.retry_policy.max_attempts}</b></div>
             <div><FileOutput size={15} /><span>预期产出</span><b>{task.expected_outputs.length}</b></div>
           </section>
           <section>
             <label>调度约束</label>
             <p className="constraint">
-              {task.execution_policy.mode} · {task.execution_policy.required_tags.join(', ') || '无标签限制'}
+              {schedulingModeLabel(task.execution_policy.mode)} · {task.execution_policy.required_tags.join('、') || '无标签限制'}
             </p>
           </section>
           {run && (
@@ -49,13 +50,17 @@ export default function Inspector() {
               <label>执行状态</label>
               <div className="execution-meta">
                 <div><Server size={14} /><span>执行节点</span><b>{nodeName}</b></div>
-                <div><RotateCcw size={14} /><span>Attempt</span><b>{attempt?.attempt ?? '-'}</b></div>
-                <div><span>状态</span><b>{attempt?.status ?? 'pending'}</b></div>
+                <div><RotateCcw size={14} /><span>尝试次数</span><b>{attempt?.attempt ?? '尚未执行'}</b></div>
+                <div><span>状态</span><b>{statusLabel(attempt?.status)}</b></div>
               </div>
               {attempt?.error && (
                 <div className="inline-error" role="alert">
-                  <strong>{String(attempt.error.code ?? 'task_error')}</strong>
-                  <span>{String(attempt.error.message ?? JSON.stringify(attempt.error))}</span>
+                  <strong>任务执行失败</strong>
+                  <span>
+                    {typeof attempt.error.message === 'string' && /[\u4e00-\u9fff]/.test(attempt.error.message)
+                      ? attempt.error.message
+                      : '执行节点返回错误，请查看任务日志'}
+                  </span>
                 </div>
               )}
               <TaskLog runId={run.id} taskId={task.id} />

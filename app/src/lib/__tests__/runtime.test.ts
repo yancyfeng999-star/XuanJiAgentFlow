@@ -81,6 +81,6 @@ describe('runtime', () => {
           error: null,
         }),
       }),
-    ).rejects.toThrow(/timed out/i);
+    ).rejects.toThrow(/启动超时/);
   });
 });
