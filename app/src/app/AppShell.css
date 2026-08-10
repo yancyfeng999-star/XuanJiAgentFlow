@@ -153,8 +153,20 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--gold);
+  background: var(--pending);
 }
+.status[data-status='running'] { color: var(--running); background: var(--running-bg); border-color: #C3D2E2; }
+.status[data-status='running']::before { background: var(--running); }
+.status[data-status='completed'],
+.status[data-status='success'] { color: var(--success); background: var(--success-bg); border-color: #BCD6C4; }
+.status[data-status='completed']::before,
+.status[data-status='success']::before { background: var(--success); }
+.status[data-status='failed'],
+.status[data-status='blocked'] { color: var(--failed); background: var(--failed-bg); border-color: #E8B7AC; }
+.status[data-status='failed']::before,
+.status[data-status='blocked']::before { background: var(--failed); }
+.status[data-status='paused'] { color: var(--paused); background: var(--paused-bg); border-color: #E3CD9E; }
+.status[data-status='paused']::before { background: var(--paused); }
 
 .run-progress { width: 160px; }
 .run-progress > div:first-child {
@@ -316,6 +328,17 @@
   color: var(--text-secondary);
 }
 .task-node__meta { padding-top: 9px; border-top: 1px solid var(--border-light); }
+.task-node__meta [data-status] { font-weight: 600; }
+.task-node__meta [data-status='success'] { color: var(--success); }
+.task-node__meta [data-status='running'],
+.task-node__meta [data-status='dispatching'],
+.task-node__meta [data-status='collecting'] { color: var(--running); }
+.task-node__meta [data-status='failed'],
+.task-node__meta [data-status='blocked'] { color: var(--failed); }
+.task-node__meta [data-status='ready'] { color: var(--gold-deep); }
+.task-node__meta [data-status='retry_wait'],
+.task-node__meta [data-status='cancelled'],
+.task-node__meta [data-status='skipped'] { color: var(--paused); }
 .task-node__files { margin-top: 6px; color: var(--text-tertiary); }
 .task-node .react-flow__handle { background: var(--gold); border-color: var(--surface); }
 

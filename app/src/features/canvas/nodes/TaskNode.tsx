@@ -28,7 +28,7 @@ export function TaskNode({ data, selected }: NodeProps<WorkflowNode>) {
     <div className="task-node__head"><strong>{data.title}</strong><span>{agentTypeLabel(data.agent_type)}</span></div>
     <p>{data.description}</p>
     <div className="task-node__meta">
-      <span>{statusLabels[status] ?? status}</span>
+      <span data-status={status}>{statusLabels[status] ?? status}</span>
       <span>{attempt?.node_id ? `节点 ${attempt.node_id}` : schedulingModeLabel(data.execution_policy.mode)}</span>
     </div>
     <div className="task-node__files">
