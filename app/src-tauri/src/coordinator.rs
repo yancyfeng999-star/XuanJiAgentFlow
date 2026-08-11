@@ -420,6 +420,7 @@ pub fn find_free_port() -> Result<u16, CoordinatorError> {
 
 /// Keep reading stdout until EOF so the child never blocks or gets SIGPIPE.
 /// Signal the first `XUANJI_PORT=` line through the channel, then keep draining.
+/// The last few KiB of stdout are retained for failure diagnostics.
 fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
     stdout: R,
     child: &mut Child,
@@ -427,6 +428,8 @@ fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
 ) -> Result<(u16, Option<String>), CoordinatorError> {
     let deadline = Instant::now() + timeout;
     let (tx, rx) = std::sync::mpsc::channel::<Result<(u16, Option<String>), String>>();
+    let stdout_tail = Arc::new(Mutex::new(String::new()));
+    let stdout_tail_for_reader = Arc::clone(&stdout_tail);
 
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
@@ -435,6 +438,20 @@ fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
         for line in reader.lines() {
             match line {
                 Ok(text) => {
+                    if let Ok(mut guard) = stdout_tail_for_reader.lock() {
+                        if guard.len() + text.len() + 1 > 4 * 1024 {
+                            let overflow = guard.len() + text.len() + 1 - 4 * 1024;
+                            if overflow < guard.len() {
+                                guard.drain(..overflow);
+                            } else {
+                                guard.clear();
+                            }
+                        }
+                        if !guard.is_empty() {
+                            guard.push('\n');
+                        }
+                        guard.push_str(&text);
+                    }
                     if !reported_port {
                         if let Some(token) = parse_session_line(&text) {
                             session_token = Some(token);
@@ -472,9 +489,15 @@ fn wait_for_port_line_and_drain<R: std::io::Read + Send + 'static>(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if Instant::now() >= deadline {
+                    let stdout_detail = pipe_tail(&stdout_tail);
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(CoordinatorError::PortTimeout);
+                    if stdout_detail.trim().is_empty() {
+                        return Err(CoordinatorError::PortTimeout);
+                    }
+                    return Err(CoordinatorError::EarlyExit(format!(
+                        "等待 Coordinator 端口超时；标准输出={stdout_detail}"
+                    )));
                 }
                 if let Ok(Some(status)) = child.try_wait() {
                     return Err(CoordinatorError::EarlyExit(format!(
