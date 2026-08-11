@@ -259,6 +259,8 @@ pub fn run() {
             )
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(supervisor)
         .manage(tunnels)
         .setup(move |app| {
