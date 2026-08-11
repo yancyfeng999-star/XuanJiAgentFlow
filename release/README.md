@@ -6,9 +6,10 @@ GitHub Release：`https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/
 
 本地归档目录：`xuanji-0.3.2-20260811/`
 
-- `璇玑_0.3.2_aarch64.dmg`：推荐安装包
+用户安装只提供安装包，不提供裸 `.app`：
+
+- `璇玑_0.3.2_aarch64.dmg`：推荐安装包（拖入「应用程序」）
 - `璇玑-0.3.2.pkg`：PKG 安装包（安装 `璇玑.app` 到 /Applications；未签名，productsign 需 Developer ID Installer）
-- `璇玑.app`：可直接运行的 macOS 应用
 - `xuanji.app.tar.gz` + `xuanji.app.tar.gz.sig`：静默自动更新产物（updater 端点为 Release 的 `latest.json`）
 - `latest.json`：更新清单副本
 
