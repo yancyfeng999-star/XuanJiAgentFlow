@@ -6,12 +6,12 @@ GitHub Release：`https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/
 
 本地归档目录：`xuanji-0.3.2-20260811/`
 
-用户安装只提供安装包，不提供裸 `.app`：
+用户安装只提供安装包，不提供裸 `.app`。**用户只需要二选一**：
 
-- `璇玑_0.3.2_aarch64.dmg`：推荐安装包（拖入「应用程序」）
-- `璇玑-0.3.2.pkg`：PKG 安装包（安装 `璇玑.app` 到 /Applications；未签名，productsign 需 Developer ID Installer）
-- `xuanji.app.tar.gz` + `xuanji.app.tar.gz.sig`：静默自动更新产物（updater 端点为 Release 的 `latest.json`）
-- `latest.json`：更新清单副本
+- `璇玑_0.3.2_aarch64.dmg`：推荐，双击挂载后把「璇玑」拖入「应用程序」
+- `璇玑-0.3.2.pkg`：双击安装到 /Applications（未签名，productsign 需 Developer ID Installer）
+
+`updater/` 子目录是静默自动更新的产物副本（tar.gz/sig/latest.json），用户无需理会；真实生效的更新清单位于 GitHub Release。
 
 该版本在 0.3.1（视觉系统、深浅色、中英文、自动更新）基础上修复审查发现：webview CSP、更新可关闭且运行中不重启、设置页版本与反馈入口、原生菜单随语言切换、最低系统 macOS 13、CI 门禁上线。
 当前使用本机临时签名，尚未进行 Apple Developer ID 签名与公证。
