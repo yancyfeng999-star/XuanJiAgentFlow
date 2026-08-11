@@ -51,3 +51,35 @@ export async function runSilentUpdate(): Promise<void> {
     /* 静默失败：保持当前版本运行 */
   }
 }
+
+export type ManualUpdateResult =
+  | { kind: 'up-to-date' }
+  | { kind: 'installed'; version: string; relaunchBlocked: boolean }
+  | { kind: 'error' };
+
+/**
+ * 手动检查更新：检查 → 有则下载安装 → 返回结果供界面提示。
+ * 不自动重启；运行中有任务时标记 relaunchBlocked，由下次启动生效。
+ */
+export async function checkForUpdateManually(): Promise<ManualUpdateResult> {
+  if (!('__TAURI_INTERNALS__' in window)) return { kind: 'error' };
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater');
+    const update = await check();
+    if (!update) return { kind: 'up-to-date' };
+    await update.downloadAndInstall();
+    return { kind: 'installed', version: update.version, relaunchBlocked: hasActiveRun() };
+  } catch {
+    return { kind: 'error' };
+  }
+}
+
+export async function relaunchApp(): Promise<void> {
+  if (!('__TAURI_INTERNALS__' in window)) return;
+  try {
+    const { relaunch } = await import('@tauri-apps/plugin-process');
+    await relaunch();
+  } catch {
+    /* 重启失败时静默 */
+  }
+}

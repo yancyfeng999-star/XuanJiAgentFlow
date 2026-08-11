@@ -336,4 +336,11 @@ export const messages: Record<string, string> = {
   'updates.currentVersion': '当前版本',
   'updates.feedback': '问题反馈',
   'updates.feedbackHint': '在 GitHub Issues 提交问题或建议。',
+  'updates.checkNow': '检查更新',
+  'updates.checking': '正在检查更新…',
+  'updates.upToDate': '已是最新版本。',
+  'updates.installed': '新版本 {version} 已安装，重启后生效。',
+  'updates.relaunchNow': '立即重启',
+  'updates.runGuardBlocked': '任务运行中，更新将在下次启动时生效。',
+  'updates.failed': '检查更新失败，请稍后重试。',
 };

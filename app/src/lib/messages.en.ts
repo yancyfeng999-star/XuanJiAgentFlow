@@ -336,4 +336,11 @@ export const messages: Record<string, string> = {
   'updates.currentVersion': 'Current version',
   'updates.feedback': 'Feedback',
   'updates.feedbackHint': 'Report issues or suggestions on GitHub Issues.',
+  'updates.checkNow': 'Check for updates',
+  'updates.checking': 'Checking for updates…',
+  'updates.upToDate': 'You are up to date.',
+  'updates.installed': 'Version {version} is installed and takes effect after relaunch.',
+  'updates.relaunchNow': 'Relaunch now',
+  'updates.runGuardBlocked': 'A run is active; the update applies on next launch.',
+  'updates.failed': 'Update check failed. Please try again later.',
 };

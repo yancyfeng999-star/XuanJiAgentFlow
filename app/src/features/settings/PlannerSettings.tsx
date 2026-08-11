@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, Languages, ShieldCheck } from 'lucide-react';
 
 import { useI18n, type Locale } from '../../lib/i18n';
-import { isAutoUpdateEnabled, setAutoUpdateEnabled } from '../../lib/updater';
+import { checkForUpdateManually, isAutoUpdateEnabled, relaunchApp, setAutoUpdateEnabled } from '../../lib/updater';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 const ISSUES_URL = 'https://github.com/yancyfeng999-star/XuanJiAgentFlow/issues';
@@ -17,6 +17,22 @@ export default function PlannerSettings() {
   const [plannerHint, setPlannerHint] = useState('');
   const [autoUpdate, setAutoUpdate] = useState<boolean>(() => isAutoUpdateEnabled());
   const [appVersion, setAppVersion] = useState('');
+  const [updateState, setUpdateState] = useState<
+    | { phase: 'idle' }
+    | { phase: 'checking' }
+    | { phase: 'up-to-date' }
+    | { phase: 'installed'; version: string; relaunchBlocked: boolean }
+    | { phase: 'failed' }
+  >({ phase: 'idle' });
+
+  const checkNow = async () => {
+    setUpdateState({ phase: 'checking' });
+    const result = await checkForUpdateManually();
+    if (result.kind === 'up-to-date') setUpdateState({ phase: 'up-to-date' });
+    else if (result.kind === 'installed') {
+      setUpdateState({ phase: 'installed', version: result.version, relaunchBlocked: result.relaunchBlocked });
+    } else setUpdateState({ phase: 'failed' });
+  };
   const { t, locale, setLocale } = useI18n();
 
   useEffect(() => {
@@ -95,6 +111,21 @@ export default function PlannerSettings() {
         </label>
         <p className="muted">{t('updates.autoHint')}</p>
         {appVersion && <p className="muted">{t('updates.currentVersion')}：{appVersion}</p>}
+        <button type="button" onClick={() => void checkNow()} disabled={updateState.phase === 'checking'}>
+          {updateState.phase === 'checking' ? t('updates.checking') : t('updates.checkNow')}
+        </button>
+        {updateState.phase === 'up-to-date' && <p className="configured" role="status">{t('updates.upToDate')}</p>}
+        {updateState.phase === 'installed' && (
+          <>
+            <p className="configured" role="status">{t('updates.installed', { version: updateState.version })}</p>
+            {updateState.relaunchBlocked ? (
+              <p className="muted">{t('updates.runGuardBlocked')}</p>
+            ) : (
+              <button type="button" onClick={() => void relaunchApp()}>{t('updates.relaunchNow')}</button>
+            )}
+          </>
+        )}
+        {updateState.phase === 'failed' && <p className="form-hint" role="status">{t('updates.failed')}</p>}
         <button type="button" onClick={() => void openIssues()}>{t('updates.feedback')}</button>
         <p className="muted">{t('updates.feedbackHint')}</p>
       </div>
