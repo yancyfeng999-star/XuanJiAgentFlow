@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
 import type { ExpectedOutput, HermesNode, WorkflowTask } from '../../lib/client';
-import { capabilityLabel, mediaTypeLabel } from '../../lib/labels';
+import { useT } from '../../lib/i18n';
+import { useLabels } from '../../lib/labels';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import ChoicePicker from './ChoicePicker';
 
@@ -70,6 +71,8 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
   const [attempts, setAttempts] = useState(String(task.retry_policy.max_attempts));
   const [delay, setDelay] = useState(String(task.retry_policy.delay_seconds));
   const [outputs, setOutputs] = useState(task.expected_outputs);
+  const t = useT();
+  const { capabilityLabel, mediaTypeLabel } = useLabels();
 
   useEffect(() => { void loadNodes(); }, [loadNodes]);
   useEffect(() => {
@@ -123,76 +126,76 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
 
   return (
     <form className="task-editor" onSubmit={submit}>
-      <label htmlFor="task-title">任务标题</label>
+      <label htmlFor="task-title">{t('task.field.title')}</label>
       <input id="task-title" value={title} onChange={(event) => setTitle(event.target.value)} disabled={frozen} />
-      <label htmlFor="task-description">任务描述</label>
+      <label htmlFor="task-description">{t('task.field.description')}</label>
       <textarea id="task-description" value={description} onChange={(event) => setDescription(event.target.value)} disabled={frozen} />
-      <label htmlFor="task-prompt">任务指令</label>
-      <textarea id="task-prompt" aria-label="任务指令" value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={frozen} />
-      <label htmlFor="task-mode">调度模式</label>
+      <label htmlFor="task-prompt">{t('task.field.prompt')}</label>
+      <textarea id="task-prompt" aria-label={t('task.field.prompt')} value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={frozen} />
+      <label htmlFor="task-mode">{t('task.field.mode')}</label>
       <select id="task-mode" value={mode} onChange={(event) => setMode(event.target.value as typeof mode)} disabled={frozen}>
-        <option value="auto">自动</option><option value="fixed">固定节点</option><option value="node_group">节点组</option>
-        <option value="local_first">本地优先</option><option value="remote_first">远程优先</option>
+        <option value="auto">{t('task.mode.auto')}</option><option value="fixed">{t('task.mode.fixed')}</option><option value="node_group">{t('task.mode.nodeGroup')}</option>
+        <option value="local_first">{t('task.mode.localFirst')}</option><option value="remote_first">{t('task.mode.remoteFirst')}</option>
       </select>
       {mode === 'fixed' && (
         <>
-          <label htmlFor="task-node">固定节点</label>
+          <label htmlFor="task-node">{t('task.field.node')}</label>
           <select id="task-node" value={nodeId} onChange={(event) => setNodeId(event.target.value)} disabled={frozen} required>
-            <option value="">请选择节点</option>
+            <option value="">{t('task.nodePlaceholder')}</option>
             {nodes.map((node) => <option key={node.id} value={node.id}>{node.name}（{node.id}）</option>)}
           </select>
-          {nodes.length === 0 && <p className="choice-empty">请先在“执行节点”中添加并诊断节点。</p>}
+          {nodes.length === 0 && <p className="choice-empty">{t('task.nodeEmpty')}</p>}
         </>
       )}
       {mode === 'node_group' && (
         <>
-          <label htmlFor="task-group">节点组</label>
+          <label htmlFor="task-group">{t('task.field.nodeGroup')}</label>
           <select id="task-group" value={nodeGroup} onChange={(event) => setNodeGroup(event.target.value)} disabled={frozen} required>
-            <option value="">请选择节点组</option>
+            <option value="">{t('task.nodeGroupPlaceholder')}</option>
             {tagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
           </select>
-          {tagOptions.length === 0 && <p className="choice-empty">节点组来自节点标签，请先完成节点诊断。</p>}
+          {tagOptions.length === 0 && <p className="choice-empty">{t('task.nodeGroupEmpty')}</p>}
         </>
       )}
-      <ChoicePicker id="task-models-add" label="所需模型" values={models} options={modelOptions} onChange={setModels} disabled={frozen} emptyHint="暂无可选模型；完成节点诊断后会自动出现。" formatChoice={capabilityLabel} />
-      <ChoicePicker id="task-tools-add" label="所需工具" values={tools} options={toolOptions} onChange={setTools} disabled={frozen} emptyHint="暂无可选工具；完成节点诊断后会自动出现。" formatChoice={capabilityLabel} />
-      <ChoicePicker id="task-tags-add" label="所需标签" values={tags} options={tagOptions} onChange={setTags} disabled={frozen} emptyHint="暂无可选标签；完成节点诊断后会自动出现。" formatChoice={capabilityLabel} />
-      <label htmlFor="task-timeout">超时（秒）</label>
+      <ChoicePicker id="task-models-add" label={t('task.models')} values={models} options={modelOptions} onChange={setModels} disabled={frozen} emptyHint={t('task.modelsEmpty')} formatChoice={capabilityLabel} />
+      <ChoicePicker id="task-tools-add" label={t('task.tools')} values={tools} options={toolOptions} onChange={setTools} disabled={frozen} emptyHint={t('task.toolsEmpty')} formatChoice={capabilityLabel} />
+      <ChoicePicker id="task-tags-add" label={t('task.tags')} values={tags} options={tagOptions} onChange={setTags} disabled={frozen} emptyHint={t('task.tagsEmpty')} formatChoice={capabilityLabel} />
+      <label htmlFor="task-timeout">{t('task.field.timeout')}</label>
       <select id="task-timeout" value={timeout} onChange={(event) => setTimeout(event.target.value)} disabled={frozen}>
-        {presetOptions(timeout, NUMBER_PRESETS.timeout).map((value) => <option key={value} value={value}>{value < 3600 ? `${value / 60} 分钟` : `${value / 3600} 小时`}</option>)}
+        {presetOptions(timeout, NUMBER_PRESETS.timeout).map((value) => <option key={value} value={value}>{value < 3600 ? t('task.minutes', { value: value / 60 }) : t('task.hours', { value: value / 3600 })}</option>)}
       </select>
-      <label htmlFor="task-attempts">最大尝试次数</label>
+      <label htmlFor="task-attempts">{t('task.field.maxAttempts')}</label>
       <select id="task-attempts" value={attempts} onChange={(event) => setAttempts(event.target.value)} disabled={frozen}>
-        {presetOptions(attempts, NUMBER_PRESETS.attempts).map((value) => <option key={value} value={value}>{value} 次</option>)}
+        {presetOptions(attempts, NUMBER_PRESETS.attempts).map((value) => <option key={value} value={value}>{t('task.times', { value })}</option>)}
       </select>
-      <label htmlFor="task-delay">重试延迟（秒）</label>
+      <label htmlFor="task-delay">{t('task.field.retryDelay')}</label>
       <select id="task-delay" value={delay} onChange={(event) => setDelay(event.target.value)} disabled={frozen}>
-        {presetOptions(delay, NUMBER_PRESETS.delay).map((value) => <option key={value} value={value}>{value === 0 ? '立即重试' : `${value} 秒`}</option>)}
+        {presetOptions(delay, NUMBER_PRESETS.delay).map((value) => <option key={value} value={value}>{value === 0 ? t('task.retryNow') : t('task.seconds', { value })}</option>)}
       </select>
       <fieldset className="output-field" disabled={frozen}>
-        <legend>预期产出</legend>
-        {outputs.length === 0 && <p className="choice-empty">尚未添加预期产出。</p>}
+        <legend>{t('task.outputs')}</legend>
+        {outputs.length === 0 && <p className="choice-empty">{t('task.outputsEmpty')}</p>}
         {outputs.map((output, index) => (
           <div className="output-row" key={index}>
             <label>
-              <span>文件路径</span>
-              <input value={output.path} onChange={(event) => updateOutput(index, { path: event.target.value })} placeholder="例如 报告.md" />
+              <span>{t('task.outputPath')}</span>
+              <input value={output.path} onChange={(event) => updateOutput(index, { path: event.target.value })} placeholder={t('task.outputPathPlaceholder')} />
             </label>
             <label>
-              <span>文件类型</span>
+              <span>{t('task.outputType')}</span>
               <select value={output.media_type ?? ''} onChange={(event) => updateOutput(index, { media_type: event.target.value || null })}>
                 {outputMediaTypes(output).map((mediaType) => <option key={mediaType || 'auto'} value={mediaType}>{mediaTypeLabel(mediaType)}</option>)}
               </select>
             </label>
-            <button type="button" className="icon-button" onClick={() => setOutputs(outputs.filter((_, outputIndex) => outputIndex !== index))} aria-label={`删除产出 ${output.path || index + 1}`}>
+            <button type="button" className="icon-button" onClick={() => setOutputs(outputs.filter((_, outputIndex) => outputIndex !== index))} aria-label={t('task.deleteOutput', { name: output.path || index + 1 })}>
               <Trash2 size={14} />
             </button>
           </div>
         ))}
-        {!frozen && <button type="button" className="add-output" onClick={() => setOutputs([...outputs, { path: '', media_type: null }])}><Plus size={14} />添加产出</button>}
+        {!frozen && <button type="button" className="add-output" onClick={() => setOutputs([...outputs, { path: '', media_type: null }])}><Plus size={14} />{t('task.addOutput')}</button>}
       </fieldset>
-      <button type="submit" className="form-primary" disabled={frozen}>保存任务</button>
-      {!frozen && <button type="button" className="danger-link" onClick={() => void removeTask(task.id)}>删除任务</button>}
+      <button type="submit" className="form-primary" disabled={frozen}>{t('task.save')}</button>
+      {!frozen && <button type="button" className="danger-link" onClick={() => void removeTask(task.id)}>{t('task.delete')}</button>}
     </form>
   );
 }

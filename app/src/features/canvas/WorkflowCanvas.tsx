@@ -4,16 +4,10 @@ import { Background, BackgroundVariant, Controls, MiniMap, ReactFlow, useNodesSt
 import type { Connection, Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
+import { hasMessage, useI18n } from '../../lib/i18n';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { nodeTypes } from './nodeTypes';
 import type { WorkflowNode } from './nodeTypes';
-
-const directionLabels: Record<string, string> = {
-  down: '下',
-  left: '左',
-  right: '右',
-  up: '上',
-};
 
 type CanvasMenu =
   | { kind: 'node'; nodeId: string; x: number; y: number }
@@ -32,6 +26,11 @@ export default function WorkflowCanvas() {
   const disconnectTaskEdges = useWorkspaceStore((state) => state.disconnectTaskEdges);
   const [goal, setGoal] = useState('');
   const [menu, setMenu] = useState<CanvasMenu | null>(null);
+  const { t, locale } = useI18n();
+  const directionText = (direction: string) => {
+    const key = `direction.${direction}`;
+    return hasMessage(locale, key) ? t(key) : t('direction.unknown');
+  };
 
   useEffect(() => {
     if (!menu) return;
@@ -68,9 +67,9 @@ export default function WorkflowCanvas() {
       source,
       target: task.id,
       animated: true,
-      ariaLabel: `从“${titles.get(source) ?? source}”到“${task.title}”的任务连线`,
+      ariaLabel: t('canvas.edgeAria', { source: titles.get(source) ?? source, target: task.title }),
     })));
-  }, [workflow]);
+  }, [t, workflow]);
 
   const connect = (connection: Connection) => {
     if (connection.source && connection.target) void connectTasks(connection.source, connection.target);
@@ -82,17 +81,17 @@ export default function WorkflowCanvas() {
   });
 
   if (!workflow) {
-    return <main className="workflow-canvas canvas-empty" aria-label="工作流画布">
+    return <main className="workflow-canvas canvas-empty" aria-label={t('canvas.aria')}>
       <form onSubmit={(event) => { event.preventDefault(); if (goal.trim()) void plan({ goal: goal.trim() }); }}>
-        <h1>{project ? '规划第一个工作流' : '选择或创建项目'}</h1>
-        <p>{project ? '输入目标，规划器将生成可编辑的任务流程图。' : '项目数据来自协调器，不使用本地演示数据。'}</p>
-        {project && <><label htmlFor="workflow-goal">项目目标</label><textarea id="workflow-goal" value={goal} onChange={(event) => setGoal(event.target.value)} /><button type="submit" className="form-primary">生成规划</button></>}
+        <h1>{project ? t('canvas.empty.title') : t('canvas.empty.noProject')}</h1>
+        <p>{project ? t('canvas.empty.hint') : t('canvas.empty.noProjectHint')}</p>
+        {project && <><label htmlFor="workflow-goal">{t('canvas.goal')}</label><textarea id="workflow-goal" value={goal} onChange={(event) => setGoal(event.target.value)} /><button type="submit" className="form-primary">{t('canvas.plan')}</button></>}
       </form>
     </main>;
   }
 
-  return <main className="workflow-canvas" aria-label="工作流画布">
-    {workflow.status === 'draft' && <button type="button" className="canvas-add-task" onClick={() => void addTask()}>新增任务</button>}
+  return <main className="workflow-canvas" aria-label={t('canvas.aria')}>
+    {workflow.status === 'draft' && <button type="button" className="canvas-add-task" onClick={() => void addTask()}>{t('canvas.addTask')}</button>}
     <ReactFlow
       nodes={nodes}
       edges={edges}
@@ -132,17 +131,17 @@ export default function WorkflowCanvas() {
       minZoom={0.25}
       maxZoom={2}
       ariaLabelConfig={{
-        'node.a11yDescription.default': '按回车键或空格键选择任务节点，按删除键移除，按退出键取消。',
-        'node.a11yDescription.keyboardDisabled': '按回车键或空格键选择任务节点，然后使用方向键移动，按删除键移除，按退出键取消。',
-        'node.a11yDescription.ariaLiveMessage': ({ direction, x, y }) => `已向${directionLabels[direction] ?? '指定方向'}移动所选任务节点。新位置：横坐标 ${x}，纵坐标 ${y}`,
-        'edge.a11yDescription.default': '按回车键或空格键选择连接线，按删除键移除，按退出键取消。',
-        'controls.ariaLabel': '画布控制',
-        'controls.zoomIn.ariaLabel': '放大',
-        'controls.zoomOut.ariaLabel': '缩小',
-        'controls.fitView.ariaLabel': '适应画布',
-        'controls.interactive.ariaLabel': '切换交互模式',
-        'minimap.ariaLabel': '任务缩略图',
-        'handle.ariaLabel': '任务连接点',
+        'node.a11yDescription.default': t('canvas.a11y.nodeDefault'),
+        'node.a11yDescription.keyboardDisabled': t('canvas.a11y.nodeKeyboardDisabled'),
+        'node.a11yDescription.ariaLiveMessage': ({ direction, x, y }) => t('canvas.a11y.nodeMoved', { direction: directionText(direction), x, y }),
+        'edge.a11yDescription.default': t('canvas.a11y.edgeDefault'),
+        'controls.ariaLabel': t('canvas.a11y.controls'),
+        'controls.zoomIn.ariaLabel': t('canvas.a11y.zoomIn'),
+        'controls.zoomOut.ariaLabel': t('canvas.a11y.zoomOut'),
+        'controls.fitView.ariaLabel': t('canvas.a11y.fitView'),
+        'controls.interactive.ariaLabel': t('canvas.a11y.interactive'),
+        'minimap.ariaLabel': t('canvas.a11y.minimap'),
+        'handle.ariaLabel': t('canvas.a11y.handle'),
       }}
     >
       <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} />
@@ -153,7 +152,7 @@ export default function WorkflowCanvas() {
       <div
         className="canvas-context-menu"
         role="menu"
-        aria-label={menu.kind === 'node' ? '节点操作' : '连线操作'}
+        aria-label={menu.kind === 'node' ? t('canvas.menu.node') : t('canvas.menu.edge')}
         style={{ left: menu.x, top: menu.y }}
       >
         {menu.kind === 'node' ? (
@@ -167,7 +166,7 @@ export default function WorkflowCanvas() {
             }}
           >
             <Trash2 size={15} />
-            删除节点
+            {t('canvas.menu.deleteNode')}
           </button>
         ) : (
           <button
@@ -180,7 +179,7 @@ export default function WorkflowCanvas() {
             }}
           >
             <Unlink size={15} />
-            断开连线
+            {t('canvas.menu.disconnect')}
           </button>
         )}
       </div>

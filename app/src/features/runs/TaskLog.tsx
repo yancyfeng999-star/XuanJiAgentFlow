@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { CoordinatorError } from '../../lib/client';
+import { useT } from '../../lib/i18n';
 import { getWorkspaceClient, useWorkspaceStore } from '../../store/workspaceStore';
 
 export interface TaskLogProps {
@@ -26,6 +27,7 @@ export default function TaskLog({ runId, taskId }: TaskLogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const setWorkspaceError = useWorkspaceStore((state) => state.setControlError);
+  const t = useT();
 
   const loadPage = useCallback(async (start: number, replace: boolean) => {
     setLoading(true);
@@ -41,12 +43,12 @@ export default function TaskLog({ runId, taskId }: TaskLogProps) {
         setError({ code: reason.code, message: reason.message });
         setWorkspaceError({ code: reason.code, message: reason.message, details: reason.details });
       } else {
-        setError({ code: 'client_error', message: '加载日志失败，请重试' });
+        setError({ code: 'client_error', message: t('log.loadError') });
       }
     } finally {
       setLoading(false);
     }
-  }, [runId, setWorkspaceError, taskId]);
+  }, [runId, setWorkspaceError, t, taskId]);
 
   useEffect(() => {
     setLines([]);
@@ -56,19 +58,19 @@ export default function TaskLog({ runId, taskId }: TaskLogProps) {
   }, [loadPage]);
 
   return (
-    <section className="task-log" aria-label="任务日志">
+    <section className="task-log" aria-label={t('log.aria')}>
       <header>
-        <h3>实时日志</h3>
-        {loading && <span className="muted">加载中…</span>}
+        <h3>{t('log.title')}</h3>
+        {loading && <span className="muted">{t('common.loading')}</span>}
       </header>
       {error && (
         <div className="inline-error" role="alert">
-          <strong>加载失败</strong>
+          <strong>{t('common.loadFailed')}</strong>
           <span>{error.message}</span>
         </div>
       )}
       <ol className="task-log-lines">
-        {lines.length === 0 && !loading ? <li className="muted">暂无日志</li> : null}
+        {lines.length === 0 && !loading ? <li className="muted">{t('log.empty')}</li> : null}
         {lines.map((line, index) => (
           <li key={`${index}-${line.slice(0, 24)}`}>{line}</li>
         ))}
@@ -78,12 +80,12 @@ export default function TaskLog({ runId, taskId }: TaskLogProps) {
           type="button"
           onClick={() => void loadPage(nextOffset, false)}
           disabled={loading}
-          aria-label="加载更多日志"
+          aria-label={t('log.loadMore')}
         >
-          加载更多日志
+          {t('log.loadMore')}
         </button>
       ) : (
-        <p className="muted">没有更多日志</p>
+        <p className="muted">{t('log.noMore')}</p>
       )}
     </section>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { getLocale, translate, useT } from '../lib/i18n';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkflowCanvas from '../features/canvas/WorkflowCanvas';
 import Inspector from '../features/inspector/Inspector';
@@ -8,6 +9,7 @@ import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
 import PlannerSettings from '../features/settings/PlannerSettings';
 import { getCoordinatorStatus, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
+import { runSilentUpdate } from '../lib/updater';
 import './AppShell.css';
 
 type BootState =
@@ -24,6 +26,7 @@ export default function AppShell() {
   const coordinatorSessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
+  const t = useT();
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +44,7 @@ export default function AppShell() {
           phase: 'error',
           message: err instanceof Error && /[\u4e00-\u9fff]/.test(err.message)
             ? err.message
-            : '协调器启动失败，请重新启动应用',
+            : translate(getLocale(), 'app.bootError.fallback'),
         });
       }
     })();
@@ -49,6 +52,11 @@ export default function AppShell() {
       cancelled = true;
     };
   }, [setCoordinatorBaseUrl]);
+
+  useEffect(() => {
+    if (boot.phase !== 'ready') return;
+    void runSilentUpdate();
+  }, [boot.phase]);
 
   useEffect(() => {
     if (boot.phase !== 'ready') return;
@@ -88,8 +96,8 @@ export default function AppShell() {
     return (
       <div className="app-shell boot-shell" role="status" aria-live="polite">
         <div className="boot-card">
-          <strong>正在启动协调器…</strong>
-          <span>等待后台服务健康检查通过后再加载工作区。</span>
+          <strong>{t('app.booting.title')}</strong>
+          <span>{t('app.booting.hint')}</span>
         </div>
       </div>
     );
@@ -99,10 +107,10 @@ export default function AppShell() {
     return (
       <div className="app-shell boot-shell" role="alert">
         <div className="boot-card boot-error">
-          <strong>协调器未能就绪</strong>
+          <strong>{t('app.bootError.title')}</strong>
           <span>{boot.message}</span>
           <button type="button" onClick={() => window.location.reload()}>
-            重试
+            {t('app.bootError.retry')}
           </button>
         </div>
       </div>
@@ -126,11 +134,11 @@ export default function AppShell() {
       {error && (
         <div className="error-banner" role="alert">
           <div>
-            <strong>操作失败</strong>
+            <strong>{t('app.error.title')}</strong>
             <span>{error.message}</span>
           </div>
-          <button type="button" onClick={clearError} aria-label="关闭错误">
-            关闭
+          <button type="button" onClick={clearError} aria-label={t('app.error.closeBanner')}>
+            {t('app.error.close')}
           </button>
         </div>
       )}

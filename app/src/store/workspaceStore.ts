@@ -17,6 +17,11 @@ import {
   type Workflow,
   type WorkflowTask,
 } from '../lib/client';
+import { getLocale, translate } from '../lib/i18n';
+
+function storeText(key: string): string {
+  return translate(getLocale(), key);
+}
 
 export interface WorkspaceError {
   code: string;
@@ -158,7 +163,7 @@ function workspaceError(error: unknown): WorkspaceError {
     code: 'client_error',
     message: error instanceof Error && /[\u4e00-\u9fff]/.test(error.message)
       ? error.message
-      : '工作区操作失败，请重试',
+      : storeText('store.operationFailed'),
     details: {},
   };
 }
@@ -224,11 +229,11 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       const projectId = get().project?.id;
       const workflow = get().workflow;
       if (!editable(workflow)) {
-        set({ error: { code: 'workflow_frozen', message: '已审核的工作流不可编辑', details: {} } });
+        set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
         return;
       }
       if (cycleIn(tasks)) {
-        set({ error: { code: 'workflow_cycle', message: '连接会形成环，请调整任务依赖', details: {} } });
+        set({ error: { code: 'workflow_cycle', message: storeText('store.workflowCycle'), details: {} } });
         return;
       }
       if (!projectId) return;
@@ -361,7 +366,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const request = ++workflowRequest;
         const project = get().project;
         if (!project) {
-          set({ error: { code: 'project_required', message: '请先选择项目', details: {} } });
+          set({ error: { code: 'project_required', message: storeText('store.projectRequired'), details: {} } });
           return;
         }
         set({ loading: true, error: null });
@@ -382,7 +387,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       updateTask: async (taskId, changes) => {
         const workflow = get().workflow;
         if (!editable(workflow)) {
-          set({ error: { code: 'workflow_frozen', message: '已审核的工作流不可编辑', details: {} } });
+          set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
           return;
         }
         await persistTasks(workflow.tasks.map((task) => task.id === taskId ? { ...task, ...changes } : task));
@@ -390,7 +395,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       addTask: async () => {
         const workflow = get().workflow;
         if (!editable(workflow)) {
-          set({ error: { code: 'workflow_frozen', message: '已审核的工作流不可编辑', details: {} } });
+          set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
           return;
         }
         const ids = new Set(workflow.tasks.map((task) => task.id));
@@ -399,7 +404,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         await persistTasks([...workflow.tasks, {
           id: `task-${number}`,
           workflow_id: workflow.id,
-          title: '新任务',
+          title: storeText('store.newTask'),
           description: '',
           prompt: '',
           agent_type: 'general',
@@ -415,7 +420,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       removeTask: async (taskId) => {
         const workflow = get().workflow;
         if (!editable(workflow)) {
-          set({ error: { code: 'workflow_frozen', message: '已审核的工作流不可编辑', details: {} } });
+          set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
           return;
         }
         await persistTasks(workflow.tasks
@@ -426,7 +431,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       connectTasks: async (sourceTaskId, targetTaskId) => {
         const workflow = get().workflow;
         if (!editable(workflow)) {
-          set({ error: { code: 'workflow_frozen', message: '已审核的工作流不可编辑', details: {} } });
+          set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
           return;
         }
         const tasks = workflow.tasks.map((task) => task.id === targetTaskId && !task.dependencies.includes(sourceTaskId)
@@ -440,7 +445,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       disconnectTaskEdges: async (edges) => {
         const workflow = get().workflow;
         if (!editable(workflow)) {
-          set({ error: { code: 'workflow_frozen', message: '已审核的工作流不可编辑', details: {} } });
+          set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
           return;
         }
         const removedByTarget = new Map<string, Set<string>>();
@@ -485,7 +490,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const projectId = get().project?.id;
         const workflow = get().workflow;
         if (!projectId || !workflow || workflow.status !== 'reviewed') {
-          set({ error: { code: 'workflow_not_reviewed', message: '工作流审核后才能执行', details: {} } });
+          set({ error: { code: 'workflow_not_reviewed', message: storeText('store.notReviewed'), details: {} } });
           return;
         }
         set({ loading: true, error: null });
@@ -698,7 +703,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
             set({
               error: {
                 code: 'provision_failed',
-                message: '节点部署未通过最终验证',
+                message: storeText('store.provisionFailed'),
                 details: { node_id: result.node_id, steps: result.steps },
               },
             });

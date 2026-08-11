@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import { getLocale, translate } from './i18n';
+
 export type RuntimeStatus =
   | 'stopped'
   | 'starting'
@@ -37,7 +39,7 @@ function runtimeErrorMessage(error: unknown): string {
     if (/[\u4e00-\u9fff]/.test(message)) return message;
   }
   if (error instanceof Error && /[\u4e00-\u9fff]/.test(error.message)) return error.message;
-  return '协调器启动失败，请重新启动应用';
+  return translate(getLocale(), 'app.bootError.fallback');
 }
 
 export async function getCoordinatorStatus(): Promise<RuntimeInfo> {
@@ -114,12 +116,12 @@ export async function waitForHealthyRuntime(
       return last;
     }
     if (last.status === 'failed') {
-      throw new Error(last.error ?? '协调器启动失败');
+      throw new Error(last.error ?? translate(getLocale(), 'runtime.startFailed'));
     }
     await sleep(intervalMs);
   }
 
-  throw new Error(last.error ?? '等待协调器启动超时');
+  throw new Error(last.error ?? translate(getLocale(), 'runtime.startTimeout'));
 }
 
 function sleep(ms: number): Promise<void> {

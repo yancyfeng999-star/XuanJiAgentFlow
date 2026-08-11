@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { CoordinatorError, type Artifact } from '../../lib/client';
-import { mediaTypeLabel } from '../../lib/labels';
+import { useI18n } from '../../lib/i18n';
+import { useLabels } from '../../lib/labels';
 import { getWorkspaceClient, useWorkspaceStore } from '../../store/workspaceStore';
 
 export interface ArtifactBrowserProps {
@@ -9,10 +10,12 @@ export interface ArtifactBrowserProps {
   taskId?: string | null;
 }
 
-function formatSize(size: number): string {
-  if (size < 1024) return `${size} 字节`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} 千字节`;
-  return `${(size / (1024 * 1024)).toFixed(1)} 兆字节`;
+type Translate = ReturnType<typeof useI18n>['t'];
+
+function formatSize(t: Translate, size: number): string {
+  if (size < 1024) return t('artifacts.bytes', { value: size });
+  if (size < 1024 * 1024) return t('artifacts.kb', { value: (size / 1024).toFixed(1) });
+  return t('artifacts.mb', { value: (size / (1024 * 1024)).toFixed(1) });
 }
 
 function fileName(path: string): string {
@@ -26,6 +29,8 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t } = useI18n();
+  const { mediaTypeLabel } = useLabels();
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +51,7 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
         } else {
           setError({
             code: 'client_error',
-            message: '加载产物失败，请重试',
+            message: t('artifacts.loadError'),
           });
         }
         setArtifacts([]);
@@ -55,22 +60,22 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [runId, taskId]);
+  }, [runId, t, taskId]);
 
   return (
-    <section className="artifact-browser" aria-label="产物浏览">
+    <section className="artifact-browser" aria-label={t('artifacts.aria')}>
       <header>
-        <h3>真实产物</h3>
-        {loading && <span className="muted">加载中…</span>}
+        <h3>{t('artifacts.title')}</h3>
+        {loading && <span className="muted">{t('common.loading')}</span>}
       </header>
       {error && (
         <div className="inline-error" role="alert">
-          <strong>加载失败</strong>
+          <strong>{t('common.loadFailed')}</strong>
           <span>{error.message}</span>
         </div>
       )}
       {!error && artifacts.length === 0 && !loading ? (
-        <p className="muted">暂无产物</p>
+        <p className="muted">{t('artifacts.empty')}</p>
       ) : (
         <ul className="artifact-list">
           {artifacts.map((artifact) => {
@@ -82,7 +87,7 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
                 <a href={href} target="_blank" rel="noreferrer">
                   {fileName(artifact.relative_path)}
                 </a>
-                <span>{formatSize(artifact.size)}</span>
+                <span>{formatSize(t, artifact.size)}</span>
                 <span className="muted">{mediaTypeLabel(artifact.media_type)}</span>
               </li>
             );

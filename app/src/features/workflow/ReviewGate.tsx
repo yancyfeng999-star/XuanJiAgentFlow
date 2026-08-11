@@ -1,14 +1,16 @@
 import { ShieldCheck } from 'lucide-react';
 
+import { useT } from '../../lib/i18n';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 export default function ReviewGate() {
   const workflow = useWorkspaceStore((state) => state.workflow);
   const loading = useWorkspaceStore((state) => state.loading);
   const reviewWorkflow = useWorkspaceStore((state) => state.reviewWorkflow);
+  const t = useT();
 
-  if (!workflow) return <span className="review-state">先规划工作流</span>;
-  if (workflow.status === 'reviewed') return <span className="review-state reviewed"><ShieldCheck size={14} />已审核，编辑已冻结</span>;
+  if (!workflow) return <span className="review-state">{t('review.planFirst')}</span>;
+  if (workflow.status === 'reviewed') return <span className="review-state reviewed"><ShieldCheck size={14} />{t('review.frozen')}</span>;
 
-  return <button type="button" onClick={() => void reviewWorkflow()} disabled={loading} aria-label="审核工作流"><ShieldCheck size={16} />审核工作流</button>;
+  return <button type="button" onClick={() => void reviewWorkflow()} disabled={loading} aria-label={t('review.action')}><ShieldCheck size={16} />{t('review.action')}</button>;
 }

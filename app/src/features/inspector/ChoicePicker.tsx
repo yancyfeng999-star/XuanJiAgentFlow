@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
+import { useT } from '../../lib/i18n';
+
 interface ChoicePickerProps {
   id: string;
   label: string;
@@ -23,6 +25,7 @@ export default function ChoicePicker({
   formatChoice = (value) => value,
 }: ChoicePickerProps) {
   const [customValue, setCustomValue] = useState('');
+  const t = useT();
   const choices = [...new Set([...values, ...options])].sort((left, right) => left.localeCompare(right));
 
   const toggle = (value: string) => {
@@ -67,12 +70,12 @@ export default function ChoicePicker({
                 addCustomValue();
               }
             }}
-            placeholder={`新增${label}`}
-            aria-label={`新增${label}`}
+            placeholder={t('picker.add', { label })}
+            aria-label={t('picker.add', { label })}
           />
           <button type="button" onClick={addCustomValue} disabled={!customValue.trim()}>
             <Plus size={13} />
-            添加
+            {t('picker.addButton')}
           </button>
         </div>
       )}
