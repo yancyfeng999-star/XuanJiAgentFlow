@@ -58,10 +58,89 @@
   --shadow-md: 0 4px 14px rgba(58, 48, 32, 0.08);
   --shadow-lg: 0 14px 34px rgba(58, 48, 32, 0.14);
 
+  /* 语义表面 */
+  --input-bg: #FFFEFA;
+  --canvas-dot: #D9D0B8;
+  --canvas-edge: #C6B995;
+  --node-border: #DCD3BA;
+  --minimap-node: #E4DCC6;
+  --minimap-mask: rgba(23, 26, 33, 0.06);
+  --form-hint-text: #8A5A12;
+  --log-bg: #15181F;
+  --log-border: #262B36;
+  --log-text: #D8D2C0;
+  --log-muted: #6E6858;
+  --capsule-bg: #22262F;
+  --capsule-text: #C9A75A;
+
   /* Font */
   --font-display: 'Songti SC', 'STSong', 'Noto Serif SC', 'SimSun', serif;
   --font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ========== 玄夜（暗色） ========== */
+[data-theme='dark'] {
+  --primary: #CD4A38;
+  --primary-hover: #DA5B47;
+  --primary-light: rgba(205, 74, 56, 0.18);
+
+  --gold: #C9A75A;
+  --gold-soft: #D9BC7A;
+  --gold-deep: #D9BC7A;
+  --gold-light: rgba(201, 167, 90, 0.16);
+
+  --bg: #15171D;
+  --surface: #1D212A;
+  --border: #313743;
+  --border-light: #282E39;
+  --text-primary: #E9E4D5;
+  --text-secondary: #A29B89;
+  --text-tertiary: #857E6C;
+
+  --research: #6FA98A;
+  --research-bg: rgba(111, 169, 138, 0.16);
+  --code: #7FA3C7;
+  --code-bg: rgba(127, 163, 199, 0.16);
+  --business: #CE9B3F;
+  --business-bg: rgba(206, 155, 63, 0.16);
+  --review: #A884B0;
+  --review-bg: rgba(168, 132, 176, 0.16);
+
+  --success: #6FA98A;
+  --success-bg: rgba(111, 169, 138, 0.16);
+  --running: #7FA3C7;
+  --running-bg: rgba(127, 163, 199, 0.16);
+  --pending: #857E6C;
+  --pending-bg: rgba(133, 126, 108, 0.16);
+  --failed: #D96A55;
+  --failed-bg: rgba(217, 106, 85, 0.16);
+  --paused: #CE9B3F;
+  --paused-bg: rgba(206, 155, 63, 0.16);
+
+  --sidebar-bg: #10131A;
+  --sidebar-surface: #1A1F29;
+  --sidebar-border: #262C38;
+  --sidebar-text: #97917F;
+  --sidebar-active: rgba(201, 167, 90, 0.18);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 14px 34px rgba(0, 0, 0, 0.48);
+
+  --input-bg: #232833;
+  --canvas-dot: #333A47;
+  --canvas-edge: #4A5160;
+  --node-border: #313743;
+  --minimap-node: #3A4250;
+  --minimap-mask: rgba(0, 0, 0, 0.32);
+  --form-hint-text: #D9BC7A;
+  --log-bg: #10131A;
+  --log-border: #262C38;
+  --log-text: #D8D2C0;
+  --log-muted: #6E6858;
+  --capsule-bg: #2A3039;
+  --capsule-text: #D9BC7A;
 }
 
 * {
