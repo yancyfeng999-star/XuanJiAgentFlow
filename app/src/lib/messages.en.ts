@@ -330,4 +330,10 @@ export const messages: Record<string, string> = {
   'capability.gpu': 'GPU',
   'capability.research': 'Research',
   'capability.terminal': 'Terminal',
+  'updates.title': 'Updates & Feedback',
+  'updates.auto': 'Install updates automatically',
+  'updates.autoHint': 'New versions download and install in the background; the app never relaunches while a run is active.',
+  'updates.currentVersion': 'Current version',
+  'updates.feedback': 'Feedback',
+  'updates.feedbackHint': 'Report issues or suggestions on GitHub Issues.',
 };

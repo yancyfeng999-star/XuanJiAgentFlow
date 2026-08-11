@@ -330,4 +330,10 @@ export const messages: Record<string, string> = {
   'capability.gpu': '图形处理器',
   'capability.research': '研究',
   'capability.terminal': '终端',
+  'updates.title': '更新与反馈',
+  'updates.auto': '自动安装更新',
+  'updates.autoHint': '发现新版本时后台下载并安装；任务运行中不会重启应用。',
+  'updates.currentVersion': '当前版本',
+  'updates.feedback': '问题反馈',
+  'updates.feedbackHint': '在 GitHub Issues 提交问题或建议。',
 };

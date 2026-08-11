@@ -809,6 +809,9 @@
 .danger-link { display: inline-flex; gap: 5px; align-items: center; color: var(--failed); }
 .danger-link:hover { border-color: var(--failed) !important; background: var(--failed-bg); }
 
+.check-row { display: flex !important; align-items: center; gap: 8px; font-size: 12px !important; color: var(--text-primary) !important; cursor: pointer; }
+.check-row input { width: auto !important; accent-color: var(--primary); }
+
 /* ========== 错误横幅 / 启动页 ========== */
 .error-banner {
   position: absolute;
