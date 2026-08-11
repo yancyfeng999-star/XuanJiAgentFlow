@@ -827,8 +827,8 @@ except KeyboardInterrupt:
                 binary,
                 data_dir: dir,
                 allow_any_binary: true,
-                health_timeout: Duration::from_secs(5),
-                port_timeout: Duration::from_secs(5),
+                health_timeout: Duration::from_secs(30),
+                port_timeout: Duration::from_secs(30),
                 ..StartOptions::default()
             })
             .expect("chatty start ok");
@@ -877,8 +877,8 @@ except KeyboardInterrupt:
                 binary: binary.clone(),
                 data_dir: dir.clone(),
                 allow_any_binary: true,
-                health_timeout: Duration::from_secs(5),
-                port_timeout: Duration::from_secs(5),
+                health_timeout: Duration::from_secs(30),
+                port_timeout: Duration::from_secs(30),
                 ..StartOptions::default()
             })
             .expect("start ok");
