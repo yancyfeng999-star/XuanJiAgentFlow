@@ -2,14 +2,14 @@
 
 ## 当前交付版本
 
-GitHub Release：`https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/tag/v0.3.2`
+GitHub Release：`https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/tag/v0.3.3`
 
-本地归档目录：`xuanji-0.3.2-20260811/`
+本地归档目录：`xuanji-0.3.3-20260811/`
 
 用户安装只提供安装包，不提供裸 `.app`。**用户只需要二选一**：
 
-- `璇玑_0.3.2_aarch64.dmg`：推荐，双击挂载后把「璇玑」拖入「应用程序」
-- `璇玑-0.3.2.pkg`：双击安装到 /Applications（未签名，productsign 需 Developer ID Installer）
+- `璇玑_0.3.3_aarch64.dmg`：推荐，双击挂载后把「璇玑」拖入「应用程序」
+- `璇玑-0.3.3.pkg`：双击安装到 /Applications（未签名，productsign 需 Developer ID Installer）
 
 `updater/` 子目录是静默自动更新的产物副本（tar.gz/sig/latest.json），用户无需理会；真实生效的更新清单位于 GitHub Release。
 
@@ -18,10 +18,12 @@ GitHub Release：`https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/
 
 ### 静默更新已实测
 
-2026-08-11：0.3.1 安装包启动后约 45 秒自动升级并重启为 0.3.2（真实 GitHub Release 链路）。
+2026-08-11：0.3.1→0.3.2 与 0.3.2→0.3.3 两轮实测均约 45 秒自动升级并重启（真实 GitHub Release 链路）。
 注意：macOS 产出的 updater 压缩包必须去除 AppleDouble/xattr 条目（本仓库用 USTAR 无扩展头格式重建），否则客户端报 `failed to unpack ._璇玑.app`。
 
 ## 历史版本
+
+- `xuanji-0.3.2-20260811/`：0.3.2（审查修复版）
 
 - `xuanji-0.3.1-20260811/`：0.3.1（视觉/深浅色/i18n/自动更新首发；其 updater 压缩包含 AppleDouble 缺陷，已在 0.3.2 修正）
 - `xuanji-3.0-cn-errors-20260729/`：3.0 首个交付版（0.3.0）
@@ -41,9 +43,9 @@ GitHub Release：`https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/
 ## 当前版本校验值
 
 ```text
-c1ddf2d426d62c52bf1a06e72523a66c041ab1a0c1e1b5030fc4143bee7dd510  璇玑_0.3.2_aarch64.dmg
-6fe257ee9b110c01825a0aa2a744454ac0e741e4d7c6987e3a9b4dfe2e83a7a7  璇玑-0.3.2.pkg
-6f81b325f52c3367789bdc7796100a4e42f173aabc1bfa53fcc77a4e6ca7b39d  xuanji.app.tar.gz
+ccd1fbab587227369f0cc0f198fa770f3a3e2f186104922ade3ce86eba619a4e  璇玑_0.3.3_aarch64.dmg
+9b1da588b62d35f2b9be89a0ba4fd5ea4aad801fded5cf225f36ad5d8538d106  璇玑-0.3.3.pkg
+e365d0095068c1e5af132cbef5c6453bc1134e9a1732fb37de0dd9f126479edd  xuanji.app.tar.gz
 ```
 
 ## 0.3.0 校验值（20260729 版）
