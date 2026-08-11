@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { getLocale, translate, useT } from '../lib/i18n';
+import { getLocale, translate, useI18n, useT } from '../lib/i18n';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkflowCanvas from '../features/canvas/WorkflowCanvas';
 import Inspector from '../features/inspector/Inspector';
@@ -27,6 +27,16 @@ export default function AppShell() {
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
   const t = useT();
+  const { locale } = useI18n();
+
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke('set_app_locale', { locale }))
+      .catch(() => {
+        /* 浏览器环境或菜单同步失败时静默 */
+      });
+  }, [locale]);
 
   useEffect(() => {
     let cancelled = false;

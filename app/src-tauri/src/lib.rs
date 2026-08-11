@@ -191,6 +191,144 @@ fn monitor_coordinator(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+struct MenuLabels<'a> {
+    about: &'a str,
+    hide: &'a str,
+    hide_others: &'a str,
+    quit: &'a str,
+    file: &'a str,
+    close_window: &'a str,
+    edit: &'a str,
+    undo: &'a str,
+    redo: &'a str,
+    cut: &'a str,
+    copy: &'a str,
+    paste: &'a str,
+    select_all: &'a str,
+    view: &'a str,
+    fullscreen: &'a str,
+    window: &'a str,
+    minimize: &'a str,
+    maximize: &'a str,
+}
+
+fn menu_labels(locale: &str) -> MenuLabels<'static> {
+    if locale == "en" {
+        MenuLabels {
+            about: "About 璇玑",
+            hide: "Hide 璇玑",
+            hide_others: "Hide Others",
+            quit: "Quit 璇玑",
+            file: "File",
+            close_window: "Close Window",
+            edit: "Edit",
+            undo: "Undo",
+            redo: "Redo",
+            cut: "Cut",
+            copy: "Copy",
+            paste: "Paste",
+            select_all: "Select All",
+            view: "View",
+            fullscreen: "Enter Full Screen",
+            window: "Window",
+            minimize: "Minimize",
+            maximize: "Zoom",
+        }
+    } else {
+        MenuLabels {
+            about: "关于璇玑",
+            hide: "隐藏璇玑",
+            hide_others: "隐藏其他应用",
+            quit: "退出璇玑",
+            file: "文件",
+            close_window: "关闭窗口",
+            edit: "编辑",
+            undo: "撤销",
+            redo: "重做",
+            cut: "剪切",
+            copy: "复制",
+            paste: "粘贴",
+            select_all: "全选",
+            view: "显示",
+            fullscreen: "进入全屏",
+            window: "窗口",
+            minimize: "最小化",
+            maximize: "最大化",
+        }
+    }
+}
+
+fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let labels = menu_labels(locale);
+    let app_menu = Submenu::with_items(
+        app,
+        "璇玑",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some(labels.about), None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, Some(labels.hide))?,
+            &PredefinedMenuItem::hide_others(app, Some(labels.hide_others))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, Some(labels.quit))?,
+        ],
+    )?;
+    let file_menu = Submenu::with_items(
+        app,
+        labels.file,
+        true,
+        &[&PredefinedMenuItem::close_window(app, Some(labels.close_window))?],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        labels.edit,
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, Some(labels.undo))?,
+            &PredefinedMenuItem::redo(app, Some(labels.redo))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, Some(labels.cut))?,
+            &PredefinedMenuItem::copy(app, Some(labels.copy))?,
+            &PredefinedMenuItem::paste(app, Some(labels.paste))?,
+            &PredefinedMenuItem::select_all(app, Some(labels.select_all))?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        labels.view,
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, Some(labels.fullscreen))?],
+    )?;
+    let window_menu = Submenu::with_items(
+        app,
+        labels.window,
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, Some(labels.minimize))?,
+            &PredefinedMenuItem::maximize(app, Some(labels.maximize))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, Some(labels.close_window))?,
+        ],
+    )?;
+    Menu::with_items(
+        app,
+        &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu],
+    )
+}
+
+#[tauri::command]
+fn set_app_locale(app: AppHandle, locale: String) -> Result<(), CommandError> {
+    let menu = build_menu(&app, &locale).map_err(|e| CommandError {
+        code: "menu_locale".into(),
+        message: e.to_string(),
+    })?;
+    app.set_menu(menu).map_err(|e| CommandError {
+        code: "menu_locale".into(),
+        message: e.to_string(),
+    })?;
+    Ok(())
+}
+
 pub fn run() {
     let supervisor = new_shared_supervisor();
     let supervisor_for_setup = Arc::clone(&supervisor);
@@ -202,62 +340,7 @@ pub fn run() {
     let tunnels_for_exit = Arc::clone(&tunnels);
 
     tauri::Builder::default()
-        .menu(|app| {
-            let app_menu = Submenu::with_items(
-                app,
-                "璇玑",
-                true,
-                &[
-                    &PredefinedMenuItem::about(app, Some("关于璇玑"), None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::hide(app, Some("隐藏璇玑"))?,
-                    &PredefinedMenuItem::hide_others(app, Some("隐藏其他应用"))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::quit(app, Some("退出璇玑"))?,
-                ],
-            )?;
-            let file_menu = Submenu::with_items(
-                app,
-                "文件",
-                true,
-                &[&PredefinedMenuItem::close_window(app, Some("关闭窗口"))?],
-            )?;
-            let edit_menu = Submenu::with_items(
-                app,
-                "编辑",
-                true,
-                &[
-                    &PredefinedMenuItem::undo(app, Some("撤销"))?,
-                    &PredefinedMenuItem::redo(app, Some("重做"))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::cut(app, Some("剪切"))?,
-                    &PredefinedMenuItem::copy(app, Some("复制"))?,
-                    &PredefinedMenuItem::paste(app, Some("粘贴"))?,
-                    &PredefinedMenuItem::select_all(app, Some("全选"))?,
-                ],
-            )?;
-            let view_menu = Submenu::with_items(
-                app,
-                "显示",
-                true,
-                &[&PredefinedMenuItem::fullscreen(app, Some("进入全屏"))?],
-            )?;
-            let window_menu = Submenu::with_items(
-                app,
-                "窗口",
-                true,
-                &[
-                    &PredefinedMenuItem::minimize(app, Some("最小化"))?,
-                    &PredefinedMenuItem::maximize(app, Some("最大化"))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::close_window(app, Some("关闭窗口"))?,
-                ],
-            )?;
-            Menu::with_items(
-                app,
-                &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu],
-            )
-        })
+        .menu(|app| build_menu(app, "zh-CN"))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -281,6 +364,7 @@ pub fn run() {
             select_ssh_key,
             list_tunnels,
             close_all_tunnels,
+            set_app_locale,
         ])
         .build(tauri::generate_context!())
         .expect("构建璇玑桌面应用失败")
