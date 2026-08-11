@@ -811,19 +811,13 @@ import socket
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-class H(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'{"status":"ok"}')
-    def log_message(self, *args):
-        pass
 
 host = "127.0.0.1"
-httpd = HTTPServer((host, 0), H)
-port = httpd.server_address[1]
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind((host, 0))
+sock.listen(8)
+port = sock.getsockname()[1]
 print(f"XUANJI_PORT={port}", flush=True)
 # Subsequent stdout/stderr must not kill the supervisor handshake.
 print(f"XUANJI_DATA_DIR=/tmp/chatty", flush=True)
@@ -833,7 +827,17 @@ sys.stderr.write("INFO: stderr chatter before serve\n")
 sys.stderr.flush()
 time.sleep(0.15)
 print("INFO: still writing stdout", flush=True)
-t = threading.Thread(target=httpd.serve_forever, daemon=True)
+
+def serve():
+    while True:
+        try:
+            conn, _ = sock.accept()
+            conn.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+            conn.close()
+        except OSError:
+            return
+
+t = threading.Thread(target=serve, daemon=True)
 t.start()
 try:
     while True:
@@ -869,22 +873,26 @@ except KeyboardInterrupt:
 import socket
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-class H(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'{"status":"ok"}')
-    def log_message(self, *args):
-        pass
 
 host = "127.0.0.1"
-httpd = HTTPServer((host, 0), H)
-port = httpd.server_address[1]
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind((host, 0))
+sock.listen(8)
+port = sock.getsockname()[1]
 print(f"XUANJI_PORT={port}", flush=True)
 print(f"XUANJI_STATUS=starting", flush=True)
-t = threading.Thread(target=httpd.serve_forever, daemon=True)
+
+def serve():
+    while True:
+        try:
+            conn, _ = sock.accept()
+            conn.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+            conn.close()
+        except OSError:
+            return
+
+t = threading.Thread(target=serve, daemon=True)
 t.start()
 try:
     while True:
