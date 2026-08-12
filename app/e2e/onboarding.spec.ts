@@ -3,13 +3,17 @@ import { expect, test } from '@playwright/test';
 import { apiCreateProject, apiPlan, apiReview, coordinatorUrl, ensureWorkspaceReady } from './helpers';
 
 test.describe('onboarding readiness journeys', () => {
-  test('first launch shows readiness center with checks', async ({ page }) => {
+  test('first launch shows readiness center with checks', async ({ page, request }) => {
+    const project = await apiCreateProject(request, `E2E Onboarding First ${Date.now()}`);
+    await page.goto('/');
     await ensureWorkspaceReady(page);
+    await page.locator('.project-rail select').selectOption(project.id);
     const center = page.getByRole('region', { name: '执行就绪检查' });
     await expect(center).toBeVisible();
     await expect(center.getByText('项目目录', { exact: true })).toBeVisible();
     await expect(center.getByText('Planner')).toBeVisible();
     await expect(center.getByText('执行节点', { exact: true })).toBeVisible();
+    await expect(center.getByText('尚未生成工作流')).toBeVisible();
   });
 
   test('unreviewed workflow blocks execute with a visible reason', async ({ page, request }) => {

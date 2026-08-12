@@ -16,7 +16,7 @@ test.describe('responsive workspace layout', () => {
     expect(noOverflow).toBeTruthy();
 
     await page.getByRole('button', { name: '执行节点' }).click();
-    await expect(page.getByRole('heading', { name: '执行节点' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '执行节点', exact: true })).toBeVisible();
     const overlayOk = await page.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
     );
