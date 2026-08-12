@@ -51,7 +51,9 @@ test.describe('node setup journeys', () => {
   test('project rename and delete flow via API-backed UI', async ({ page, request }) => {
     await ensureWorkspaceReady(page);
     const name = `E2E Project ${Date.now()}`;
-    await page.locator('.project-create-details summary').click();
+    if (!(await page.getByLabel('项目名称').isVisible())) {
+      await page.locator('.project-create-details summary').click();
+    }
     await page.locator('#project-name').fill(name);
     await page.getByRole('button', { name: '创建项目' }).click();
     await expect(page.locator('.project-select')).toHaveValue(/.+/, { timeout: 10_000 });
@@ -66,6 +68,8 @@ test.describe('node setup journeys', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByLabel('输入项目名以确认删除').fill(`${name} 改名`);
     await dialog.getByRole('button', { name: '永久删除' }).click();
-    await expect(page.getByLabel('顶部运行栏').getByText('未选择项目')).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator('.project-select option', { hasText: `${name} 改名` }),
+    ).toHaveCount(0, { timeout: 10_000 });
   });
 });

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 from pathlib import Path
 
@@ -59,6 +60,8 @@ def create_app(
 
     root = root or _P(os.getenv("XUANJI_NODE_ROOT", "~/.xuanji-node/tasks")).expanduser()
     token = token if token is not None else os.getenv("XUANJI_NODE_TOKEN", "")
+    if not token:
+        raise RuntimeError("XUANJI_NODE_TOKEN 为空：节点代理必须以非空访问令牌启动（fail closed）")
     hermes_url = hermes_url or os.getenv("HERMES_API_URL", "http://127.0.0.1:8642")
     hermes_token = hermes_token or os.getenv("HERMES_API_KEY", "")
     hermes_mode = os.getenv("HERMES_MODE", "api")
@@ -84,7 +87,8 @@ def create_app(
         )
 
     async def authorize(authorization: str | None = Header(default=None)) -> None:
-        if token and authorization != f"Bearer {token}":
+        expected = f"Bearer {token}"
+        if not authorization or not hmac.compare_digest(authorization, expected):
             raise HTTPException(status_code=401, detail={"code": "unauthorized", "message": "节点 Token 无效"})
 
     @app.get("/v1/health")
@@ -209,13 +213,10 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(
-        app,
+        create_app(),
         host=os.getenv("XUANJI_NODE_HOST", "127.0.0.1"),
         port=int(os.getenv("XUANJI_NODE_PORT", "8765")),
     )
-
-
-app = create_app()
 
 if __name__ == "__main__":
     main()

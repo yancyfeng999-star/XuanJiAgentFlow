@@ -27,7 +27,9 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await ensureWorkspaceReady(page);
 
     const projectName = `画布交互测试 ${Date.now()}`;
-    await page.locator('.project-create-details summary').click();
+    if (!(await page.getByLabel('项目名称').isVisible())) {
+      await page.locator('.project-create-details summary').click();
+    }
     await page.getByLabel('项目名称').fill(projectName);
     await page.getByRole('button', { name: '创建项目' }).click();
     await expect(page.getByRole('banner', { name: '顶部运行栏' })).toContainText(projectName);
@@ -107,7 +109,9 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await ensureWorkspaceReady(page);
 
     // 1) Create project via UI
-    await page.locator('.project-create-details summary').click();
+    if (!(await page.getByLabel('项目名称').isVisible())) {
+      await page.locator('.project-create-details summary').click();
+    }
     await page.getByLabel('项目名称').fill('端到端本地工作流');
     await page.getByRole('button', { name: '创建项目' }).click();
     // <option> content is not "visible" to Playwright; assert via select value/text

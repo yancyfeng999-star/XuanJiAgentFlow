@@ -360,6 +360,7 @@ export interface CoordinatorClient {
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
   getReadiness(query?: ReadinessQuery): Promise<ReadinessResult>;
+  createWsTicket(runId: string): Promise<{ ticket: string; expires_in: number }>;
 }
 
 function isErrorEnvelope(value: unknown): value is CoordinatorErrorEnvelope {
@@ -449,6 +450,7 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),
+    createWsTicket: (runId) => request('/api/session/ws-tickets', json('POST', { run_id: runId })),
     getReadiness: (query = {}) => {
       const params = new URLSearchParams();
       if (query.projectId) params.set('project_id', query.projectId);

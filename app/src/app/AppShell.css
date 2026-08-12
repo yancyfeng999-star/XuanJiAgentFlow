@@ -1034,3 +1034,13 @@
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .confirm-actions .danger { color: var(--failed); }
 .icon-button.danger { color: var(--failed); }
+.artifact-download {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+.artifact-download:disabled { opacity: 0.5; cursor: wait; }

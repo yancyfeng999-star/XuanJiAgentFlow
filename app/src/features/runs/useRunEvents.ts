@@ -14,14 +14,29 @@ export interface UseRunEventsResult {
   connected: boolean;
 }
 
-function toWebSocketUrl(baseUrl: string, runId: string, lastEventId: number, sessionToken: string | null): string {
+function toWebSocketUrl(baseUrl: string, runId: string, lastEventId: number, ticket: string | null): string {
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = `/ws/runs/${encodeURIComponent(runId)}`;
   url.searchParams.set('last_event_id', String(lastEventId));
-  if (sessionToken) url.searchParams.set('session_token', sessionToken);
+  if (ticket) url.searchParams.set('ticket', ticket);
   url.hash = '';
   return url.toString();
+}
+
+async function issueTicket(baseUrl: string, runId: string, sessionToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/session/ws-tickets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Xuanji-Session': sessionToken },
+      body: JSON.stringify({ run_id: runId }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as { ticket?: string };
+    return typeof payload.ticket === 'string' ? payload.ticket : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseEvent(raw: unknown): RunEvent | null {
@@ -94,10 +109,17 @@ export function useRunEvents(runId: string | null): UseRunEventsResult {
       }
     };
 
-    const connect = () => {
+    const connect = async () => {
       if (disposed) return;
       clearTimer();
-      const url = toWebSocketUrl(baseUrl, runId, stateRef.current.lastEventId, sessionToken);
+      // 长期会话令牌不进入 URL：先换取一次性短期票据
+      const ticket = sessionToken ? await issueTicket(baseUrl, runId, sessionToken) : null;
+      if (disposed) return;
+      if (sessionToken && !ticket) {
+        reconnectTimer.current = setTimeout(() => void connect(), 500);
+        return;
+      }
+      const url = toWebSocketUrl(baseUrl, runId, stateRef.current.lastEventId, ticket);
       socket = new WebSocket(url);
 
       socket.onopen = () => {
@@ -129,11 +151,11 @@ export function useRunEvents(runId: string | null): UseRunEventsResult {
       socket.onclose = () => {
         if (disposed) return;
         setConnected(false);
-        reconnectTimer.current = setTimeout(connect, 250);
+        reconnectTimer.current = setTimeout(() => void connect(), 250);
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
       disposed = true;

@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> None:
     from xuanji.api.app import CoordinatorConfig, create_coordinator_app
 
     app = create_coordinator_app(
-        CoordinatorConfig(data_dir=data_dir, session_token=session_token)
+        CoordinatorConfig(data_dir=data_dir, session_token=session_token, credential_backend="auto")
     )
     emit(f"XUANJI_STATUS=starting host={host} port={port}")
     # Prefer quieter access logs in packaged mode — still works if parent drains.

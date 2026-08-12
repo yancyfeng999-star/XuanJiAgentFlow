@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import app as app_module
@@ -45,7 +46,7 @@ class FakeHermesClient:
         return {"id": run_id, "status": self.stop_status}
 
 
-def make_app(tmp_path: Path, token: str = ""):
+def make_app(tmp_path: Path, token: str = "secret"):
     fake = FakeHermesClient()
     app = create_app(root=tmp_path / "tasks", token=token, hermes_url="http://fake", hermes_token="")
     app.state.executor.client = fake
@@ -74,7 +75,7 @@ def test_bearer_authentication_protects_node_api(tmp_path: Path) -> None:
 
 def test_task_creates_and_completes(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     created = client.post("/v1/tasks", json={"goal": "test task", "idempotency_key": "t1"})
 
     assert created.status_code == 202
@@ -86,7 +87,7 @@ def test_task_creates_and_completes(tmp_path: Path) -> None:
 
 def test_staged_input_is_verified_before_start_and_reaches_hermes_output(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     marker = b"UPSTREAM-MARKER-7f31"
     digest = hashlib.sha256(marker).hexdigest()
     dispatch = {
@@ -141,7 +142,7 @@ def test_staged_input_is_verified_before_start_and_reaches_hermes_output(tmp_pat
 
 def test_task_creation_is_idempotent_without_restarting_hermes(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
 
     first = client.post("/v1/tasks", json={"goal": "first goal", "idempotency_key": "dup"})
     client.get("/v1/tasks/dup")
@@ -155,7 +156,7 @@ def test_task_creation_is_idempotent_without_restarting_hermes(tmp_path: Path) -
 
 def test_task_creation_rejects_unsafe_idempotency_keys(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
 
     for key in ("../escape", "nested/task", "..", "."):
         response = client.post("/v1/tasks", json={"goal": "unsafe", "idempotency_key": key})
@@ -167,7 +168,7 @@ def test_task_creation_rejects_unsafe_idempotency_keys(tmp_path: Path) -> None:
 
 def test_task_creation_conflicts_when_idempotency_goal_changes(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
 
     first = client.post("/v1/tasks", json={"goal": "first goal", "idempotency_key": "dup-goal"})
     second = client.post("/v1/tasks", json={"goal": "different goal", "idempotency_key": "dup-goal"})
@@ -203,7 +204,7 @@ def test_concurrent_task_creation_starts_hermes_once(
     monkeypatch.setattr(Path, "exists", synchronized_exists)
 
     def create() -> int:
-        with TestClient(app) as client:
+        with TestClient(app, headers={"Authorization": "Bearer secret"}) as client:
             return client.post(
                 "/v1/tasks",
                 json={"goal": "same goal", "idempotency_key": "concurrent"},
@@ -219,7 +220,7 @@ def test_concurrent_task_creation_starts_hermes_once(
 @pytest.mark.parametrize("hermes_status", ["stopped", "cancelled"])
 def test_cancel_only_marks_cancelled_after_hermes_confirmation(tmp_path: Path, hermes_status: str) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-confirmed"})
     fake.stop_status = hermes_status
 
@@ -231,7 +232,7 @@ def test_cancel_only_marks_cancelled_after_hermes_confirmation(tmp_path: Path, h
 
 def test_cancel_does_not_claim_success_without_hermes_confirmation(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-pending"})
     fake.stop_status = "running"
 
@@ -243,7 +244,7 @@ def test_cancel_does_not_claim_success_without_hermes_confirmation(tmp_path: Pat
 
 def test_cancel_communication_failure_is_persisted_as_cancel_failed(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-error"})
     fake.stop_error = OSError("Hermes unavailable")
 
@@ -265,7 +266,7 @@ def test_cancelling_task_poll_reconciles_terminal_hermes_status(
     expected_status: str,
 ) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-poll"})
     fake.stop_status = "running"
     assert client.post("/v1/tasks/cancel-poll/cancel").json()["status"] == "cancelling"
@@ -284,7 +285,7 @@ def test_cancelling_task_poll_reconciles_terminal_hermes_status(
 
 def test_cancelling_task_poll_failure_becomes_cancel_failed(tmp_path: Path) -> None:
     app, fake = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     client.post("/v1/tasks", json={"goal": "cancel me", "idempotency_key": "cancel-poll-error"})
     fake.stop_status = "running"
     assert client.post("/v1/tasks/cancel-poll-error/cancel").json()["status"] == "cancelling"
@@ -299,7 +300,7 @@ def test_cancelling_task_poll_failure_becomes_cancel_failed(tmp_path: Path) -> N
 
 def test_artifact_list_matches_node_client_protocol_and_download_streams(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path, token="secret")
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     headers = {"Authorization": "Bearer secret"}
     client.post(
         "/v1/tasks",
@@ -330,7 +331,8 @@ def test_artifact_list_matches_node_client_protocol_and_download_streams(tmp_pat
         assert downloaded.headers["x-artifact-sha256"] == artifact["sha256"]
 
     assert body == b"Result for: produce output"
-    assert client.get(f"/v1/tasks/artifact-task/artifacts/{artifact['path']}").status_code == 401
+    unauthenticated = TestClient(app)
+    assert unauthenticated.get(f"/v1/tasks/artifact-task/artifacts/{artifact['path']}").status_code == 401
 
 
 def test_artifact_download_streams_opened_file_after_path_is_replaced(
@@ -338,7 +340,7 @@ def test_artifact_download_streams_opened_file_after_path_is_replaced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app, _ = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     create_completed_task(client, "replaced-artifact")
     expected = b"Result for: produce output"
     path = tmp_path / "tasks" / "replaced-artifact" / "artifacts" / "hermes-output.md"
@@ -366,7 +368,7 @@ def test_artifact_download_streams_opened_file_after_path_is_replaced(
 
 def test_artifact_download_rejects_parent_traversal_and_absolute_paths(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     create_completed_task(client, "safe-task")
 
     traversal = client.get("/v1/tasks/safe-task/artifacts/%2E%2E%2Ftask.json")
@@ -379,7 +381,7 @@ def test_artifact_download_rejects_parent_traversal_and_absolute_paths(tmp_path:
 
 def test_artifact_download_rejects_symlink_escape(tmp_path: Path) -> None:
     app, _ = make_app(tmp_path)
-    client = TestClient(app)
+    client = TestClient(app, headers={"Authorization": "Bearer secret"})
     create_completed_task(client, "symlink-task")
     secret = tmp_path / "outside.txt"
     secret.write_text("outside secret", encoding="utf-8")
@@ -395,9 +397,10 @@ def test_artifact_download_rejects_symlink_escape(tmp_path: Path) -> None:
 def test_node_agent_main_binds_loopback_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict = {}
     monkeypatch.delenv("XUANJI_NODE_HOST", raising=False)
+    monkeypatch.setenv("XUANJI_NODE_TOKEN", "secret")
     monkeypatch.setattr("uvicorn.run", lambda target, **kwargs: called.update({"target": target, **kwargs}))
 
     app_module.main()
 
     assert called["host"] == "127.0.0.1"
-    assert called["target"] is app_module.app
+    assert isinstance(called["target"], FastAPI)

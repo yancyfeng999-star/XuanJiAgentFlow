@@ -139,7 +139,13 @@ export default function ProjectRail() {
         </div>
       )}
 
-      <details className="project-create-details" key={projects.length === 0 ? 'empty' : 'list'} defaultOpen={projects.length === 0}>
+      <details
+        className="project-create-details"
+        key={projects.length === 0 ? 'empty' : 'list'}
+        ref={(element) => {
+          if (element && projects.length === 0) element.open = true;
+        }}
+      >
         <summary>{t('rail.newProject')}</summary>
         <form className="project-create" onSubmit={submit}>
           <label htmlFor="project-name">{t('rail.projectName')}</label>
