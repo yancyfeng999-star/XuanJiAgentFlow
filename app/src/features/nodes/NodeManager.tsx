@@ -16,6 +16,9 @@ export default function NodeManager() {
   const saveNode = useWorkspaceStore((state) => state.saveNode);
   const diagnoseNode = useWorkspaceStore((state) => state.diagnoseNode);
   const removeNode = useWorkspaceStore((state) => state.removeNode);
+  const pendingActions = useWorkspaceStore((state) => state.pendingActions);
+  const pending = (kind: string, key: string) =>
+    pendingActions.some((action) => action.kind === kind && action.key === key);
   const [form, setForm] = useState(blank);
   const { t } = useI18n();
   const { statusLabel } = useLabels();
@@ -51,14 +54,20 @@ export default function NodeManager() {
         <label htmlFor="ssh-user">{t('nodes.field.sshUser')}</label><input id="ssh-user" value={form.sshUser} onChange={field('sshUser')} />
         <label htmlFor="ssh-key">{t('nodes.field.sshKey')}</label><input id="ssh-key" value={form.sshKeyPath} onChange={field('sshKeyPath')} />
         <label htmlFor="node-token">{t('nodes.field.token')}</label><input id="node-token" type="password" value={form.credential} onChange={field('credential')} autoComplete="off" />
-        <button type="submit" className="form-primary">{t('nodes.save')}</button>
+        <button type="submit" className="form-primary" disabled={form.id !== '' && pending('save_node', form.id)}>
+          {form.id !== '' && pending('save_node', form.id) ? t('nodes.saving') : t('nodes.save')}
+        </button>
       </form>
       <div className="settings-card node-list"><h2>{t('nodes.connected')}</h2>{nodes.length === 0 ? <p className="muted">{t('nodes.empty')}</p> : nodes.map((node) => <article key={node.id}>
         <div><Server size={18} /><strong>{node.name}</strong><span>{statusLabel(node.status)}</span></div><small>{node.api_url}</small>
         {node.credential_configured === true && <p className="configured">{t('nodes.credentialConfigured')}</p>}
-        <button type="button" onClick={() => void diagnoseNode(node.id)}><RefreshCw size={14} />{t('nodes.rediagnose')}</button>
+        <button type="button" onClick={() => void diagnoseNode(node.id)} disabled={pending('diagnose_node', node.id)}>
+          <RefreshCw size={14} />{pending('diagnose_node', node.id) ? t('nodes.diagnosing') : t('nodes.rediagnose')}
+        </button>
         {node.kind === 'remote' && <ProvisionWizard nodeId={node.id} />}
-        <button type="button" className="danger-link" onClick={() => void removeNode(node.id)}><Trash2 size={14} />{t('nodes.remove')}</button>
+        <button type="button" className="danger-link" onClick={() => void removeNode(node.id)} disabled={pending('delete_node', node.id)}>
+          <Trash2 size={14} />{t('nodes.remove')}
+        </button>
       </article>)}</div>
     </div>
   </section>;

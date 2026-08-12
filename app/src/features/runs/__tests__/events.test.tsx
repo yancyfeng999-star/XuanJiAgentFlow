@@ -215,7 +215,7 @@ function seedWorkspace() {
     selectedTaskId: 'research',
     canExecute: true,
     error: null,
-    loading: false,
+    pendingActions: [],
   });
 }
 

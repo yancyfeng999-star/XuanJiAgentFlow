@@ -12,6 +12,9 @@ export default function RunControls() {
   const cancelRun = useWorkspaceStore((state) => state.cancelRun);
   const retryTask = useWorkspaceStore((state) => state.retryTask);
   const skipTask = useWorkspaceStore((state) => state.skipTask);
+  const pendingActions = useWorkspaceStore((state) => state.pendingActions);
+  const controlPending = (kind: string, key?: string) =>
+    pendingActions.some((action) => action.kind === kind && (key === undefined || action.key === key));
   const status = run?.status ?? runStatus;
   const disabled = !run;
   const canPause = status === 'running' || status === 'accepted' || status === 'pending';
@@ -25,7 +28,7 @@ export default function RunControls() {
       <button
         type="button"
         onClick={() => void pauseRun()}
-        disabled={disabled || !canPause}
+        disabled={disabled || !canPause || controlPending('pause', run?.id)}
         aria-label={t('run.pause')}
       >
         <Pause size={14} />{t('run.pause')}
@@ -33,7 +36,7 @@ export default function RunControls() {
       <button
         type="button"
         onClick={() => void resumeRun()}
-        disabled={disabled || !canResume}
+        disabled={disabled || !canResume || controlPending('resume', run?.id)}
         aria-label={t('run.resume')}
       >
         <Play size={14} />{t('run.resume')}
@@ -41,7 +44,7 @@ export default function RunControls() {
       <button
         type="button"
         onClick={() => void cancelRun()}
-        disabled={disabled || !canCancel}
+        disabled={disabled || !canCancel || controlPending('cancel', run?.id)}
         aria-label={t('run.cancel')}
       >
         <Square size={14} />{t('run.cancel')}
@@ -49,7 +52,7 @@ export default function RunControls() {
       <button
         type="button"
         onClick={() => selectedTaskId && void retryTask(selectedTaskId)}
-        disabled={!canMutateTask}
+        disabled={!canMutateTask || (selectedTaskId !== null && controlPending('retry_task', selectedTaskId))}
         aria-label={t('run.retryTask')}
       >
         <RotateCcw size={14} />{t('run.retry')}
@@ -57,7 +60,7 @@ export default function RunControls() {
       <button
         type="button"
         onClick={() => selectedTaskId && void skipTask(selectedTaskId)}
-        disabled={!canMutateTask}
+        disabled={!canMutateTask || (selectedTaskId !== null && controlPending('skip_task', selectedTaskId))}
         aria-label={t('run.skipTask')}
       >
         <SkipForward size={14} />{t('run.skip')}

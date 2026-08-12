@@ -19,6 +19,8 @@ export default function ProjectRail() {
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
   const loadProject = useWorkspaceStore((state) => state.loadProject);
   const createProject = useWorkspaceStore((state) => state.createProject);
+  const creating = useWorkspaceStore((state) =>
+    state.pendingActions.some((action) => action.kind === 'create_project'));
   const setActivePanel = useWorkspaceStore((state) => state.setActivePanel);
   const [name, setName] = useState('');
   const [rootPath, setRootPath] = useState('');
@@ -80,7 +82,7 @@ export default function ProjectRail() {
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-          <button type="submit" aria-label={t('rail.createProject')}>
+          <button type="submit" aria-label={t('rail.createProject')} disabled={creating}>
             <Plus size={15} />
           </button>
         </div>

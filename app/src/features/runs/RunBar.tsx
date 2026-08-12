@@ -16,6 +16,8 @@ export default function RunBar() {
   const canExecute = useWorkspaceStore((state) => state.canExecute);
   const readiness = useWorkspaceStore((state) => state.readiness);
   const executeWorkflow = useWorkspaceStore((state) => state.executeWorkflow);
+  const executing = useWorkspaceStore((state) =>
+    state.pendingActions.some((action) => action.kind === 'execute'));
   const events = useRunEvents(run?.id ?? null);
   const online = nodes.filter((node) => node.status === 'online').length;
   const status = run?.status ?? runStatus;
@@ -51,10 +53,10 @@ export default function RunBar() {
           type="button"
           className="primary"
           onClick={() => void executeWorkflow()}
-          disabled={executeDisabled}
+          disabled={executeDisabled || executing}
           aria-label={t('run.executeAll')}
         >
-          <Play size={16} />{t('run.executeAll')}
+          <Play size={16} />{executing ? t('run.executing') : t('run.executeAll')}
         </button>
       </div>
     </header>

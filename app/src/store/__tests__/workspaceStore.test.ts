@@ -266,7 +266,7 @@ describe('workspace store', () => {
 
     expect(store.getState().hermesNodes).toEqual([]);
     expect(store.getState().selectedTaskId).toBeNull();
-    expect(store.getState().loading).toBe(false);
+    expect(store.getState().pendingActions).toEqual([]);
   });
 
   it('reports failed node provisioning without treating HTTP 200 as success', async () => {
@@ -409,5 +409,53 @@ describe('workspace store', () => {
     await store.getState().updateTask('research', { title: 'Blocked edit' });
     expect(store.getState().workflow?.tasks[0].title).toBe('Research');
     expect(store.getState().error).toMatchObject({ code: 'workflow_frozen' });
+  });
+});
+
+describe('action-level pending', () => {
+  it('blocks duplicate in-flight actions without locking unrelated actions', async () => {
+    const client = makeClient();
+    const gate = deferred<Workflow>();
+    vi.mocked(client.plan).mockImplementation(() => gate.promise);
+    const store = createWorkspaceStore(() => client);
+    store.setState({ project, workflow: null });
+
+    const first = store.getState().plan({ goal: 'one' });
+    const second = store.getState().plan({ goal: 'two' });
+    await second;
+    expect(client.plan).toHaveBeenCalledTimes(1);
+    expect(store.getState().isPending('plan', 'project-1')).toBe(true);
+
+    // 不相关的动作不被误锁
+    await store.getState().loadNodes();
+    expect(client.listNodes).toHaveBeenCalledTimes(1);
+
+    gate.resolve(workflow);
+    await first;
+    expect(store.getState().pendingActions).toEqual([]);
+  });
+
+  it('clears only the matching pending action when one of two finishes', async () => {
+    const client = makeClient();
+    const slowSave = deferred<unknown>();
+    vi.mocked(client.createNode).mockImplementation(() => slowSave.promise as never);
+    const store = createWorkspaceStore(() => client);
+
+    const save = store.getState().saveNode({
+      id: 'node-a', name: 'A', kind: 'local', api_url: 'http://a.test',
+    });
+    const diagnose = store.getState().diagnoseNode('node-b');
+    await diagnose;
+    expect(store.getState().isPending('diagnose_node', 'node-b')).toBe(false);
+    expect(store.getState().isPending('save_node', 'node-a')).toBe(true);
+
+    slowSave.resolve({
+      id: 'node-a', name: 'A', kind: 'local', api_url: 'http://a.test',
+      ssh_host: null, ssh_port: null, ssh_user: null, ssh_key_path: null, status: 'unknown',
+      capabilities_json: {}, max_concurrency: 1, running_tasks: 0, success_rate: 1,
+      last_seen_at: null, credential_configured: false,
+    });
+    await save;
+    expect(store.getState().pendingActions).toEqual([]);
   });
 });

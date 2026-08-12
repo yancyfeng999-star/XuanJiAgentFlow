@@ -364,4 +364,9 @@ export const messages: Record<string, string> = {
   'readiness.action.open_workflow': 'Open workflow',
   'readiness.action.retry': 'Retry',
   'error.run_not_ready': 'Execution preconditions are not met. Resolve the blockers first.',
+  'review.reviewing': 'Reviewing…',
+  'run.executing': 'Executing…',
+  'nodes.saving': 'Saving…',
+  'nodes.diagnosing': 'Diagnosing…',
+  'planner.saving': 'Saving…',
 };

@@ -364,4 +364,9 @@ export const messages: Record<string, string> = {
   'readiness.action.open_workflow': '打开工作流',
   'readiness.action.retry': '重试',
   'error.run_not_ready': '执行条件未满足，请先处理阻塞项',
+  'review.reviewing': '审核中…',
+  'run.executing': '执行中…',
+  'nodes.saving': '保存中…',
+  'nodes.diagnosing': '诊断中…',
+  'planner.saving': '保存中…',
 };
