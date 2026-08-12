@@ -37,6 +37,7 @@ const makeClient = () => ({
   listProjects: vi.fn().mockResolvedValue([project]),
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
+  listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
   getWorkflow: vi.fn().mockResolvedValue(workflow),
   plan: vi.fn().mockResolvedValue(workflow),
   updateWorkflow: vi.fn().mockImplementation(async (_id, payload) => ({ ...workflow, ...payload })),

@@ -12,6 +12,7 @@ import {
   type PlannerConfig,
   type PlannerConfigInput,
   type Project,
+  type ProjectRunSummary,
   type ReadinessResult,
   type ReviewPrepareResult,
   type Run,
@@ -46,7 +47,18 @@ export type PendingActionKind = PendingAction['kind'];
 function pendingKey(action: PendingAction): string {
   return `${action.kind}:${action.key}`;
 }
-export type RunStatus = 'idle' | 'accepted' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'pending' | 'success' | 'cancelling';
+export type RunStatus =
+  | 'idle'
+  | 'pending'
+  | 'running'
+  | 'paused'
+  | 'cancelling'
+  | 'cancelled'
+  | 'success'
+  | 'failed'
+  | 'blocked';
+
+export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'success', 'failed']);
 
 type TaskChanges = Partial<Omit<WorkflowTask, 'id' | 'workflow_id' | 'dependencies'>>;
 
@@ -65,6 +77,8 @@ export interface WorkspaceState {
   project: Project | null;
   workflow: Workflow | null;
   run: Run | null;
+  runHistory: ProjectRunSummary[];
+  runHistoryCursor: string | null;
   runStatus: RunStatus;
   runProgress: number;
   lastEventId: number;
@@ -106,6 +120,8 @@ export interface WorkspaceState {
   retryTask: (taskId: string) => Promise<void>;
   skipTask: (taskId: string) => Promise<void>;
   refreshRun: () => Promise<void>;
+  loadRunHistory: (append?: boolean) => Promise<void>;
+  openRun: (runId: string) => Promise<void>;
   loadNodes: () => Promise<void>;
   saveNode: (input: NodeInput) => Promise<void>;
   diagnoseNode: (nodeId: string) => Promise<void>;
@@ -131,6 +147,8 @@ const initialState = {
   project: null as Project | null,
   workflow: null as Workflow | null,
   run: null as Run | null,
+  runHistory: [] as ProjectRunSummary[],
+  runHistoryCursor: null as string | null,
   runStatus: 'idle' as RunStatus,
   runProgress: 0,
   lastEventId: 0,
@@ -145,26 +163,19 @@ const initialState = {
   canExecute: false,
 };
 
-function toRunStatus(status: string | undefined | null): RunStatus {
+function asRunStatus(status: string | undefined | null): RunStatus {
   switch (status) {
     case 'pending':
-      return 'accepted';
-    case 'success':
-      return 'completed';
-    case 'cancelling':
-      return 'cancelled';
-    case 'blocked':
-      return 'failed';
-    case 'accepted':
     case 'running':
     case 'paused':
-    case 'completed':
-    case 'failed':
+    case 'cancelling':
     case 'cancelled':
-    case 'idle':
+    case 'success':
+    case 'failed':
+    case 'blocked':
       return status;
     default:
-      return (status as RunStatus) || 'idle';
+      return 'idle';
   }
 }
 
@@ -308,6 +319,8 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           project: null,
           workflow: null,
           run: null,
+          runHistory: [],
+          runHistoryCursor: null,
           lastEventId: 0,
           taskAttempts: {},
           runStatus: 'idle',
@@ -327,7 +340,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       setRunProgress: (runProgress) => set({ runProgress: Math.max(0, Math.min(100, runProgress)) }),
       applyRunMonitor: (update) => set((state) => ({
         lastEventId: update.lastEventId ?? state.lastEventId,
-        runStatus: update.runStatus ? toRunStatus(update.runStatus) : state.runStatus,
+        runStatus: update.runStatus ? asRunStatus(update.runStatus) : state.runStatus,
         runProgress: update.runProgress === undefined
           ? state.runProgress
           : Math.max(0, Math.min(100, update.runProgress)),
@@ -382,6 +395,8 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           selectedTaskId: null,
           workflow: null,
           run: null,
+          runHistory: [],
+          runHistoryCursor: null,
           lastEventId: 0,
           taskAttempts: {},
           runStatus: 'idle',
@@ -389,12 +404,30 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           canExecute: false,
         });
         try {
-          const [project, workflow] = await Promise.all([
+          const [project, workflow, runPage] = await Promise.all([
             client.getProject(projectId),
             client.getProjectWorkflow(projectId),
+            client.listProjectRuns(projectId),
           ]);
           if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) {
-            set({ project, workflow, canExecute: workflow?.status === 'reviewed' });
+            set({
+              project,
+              workflow,
+              canExecute: workflow?.status === 'reviewed',
+              runHistory: runPage.runs,
+              runHistoryCursor: runPage.next_cursor,
+            });
+            const active = runPage.runs.find((item) => !TERMINAL_RUN_STATUSES.has(item.status));
+            if (active) {
+              const restored = await client.getRun(active.id);
+              if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) {
+                set({
+                  run: restored,
+                  runStatus: asRunStatus(restored.status),
+                  taskAttempts: attemptsByTask(restored.attempts ?? []),
+                });
+              }
+            }
             void get().loadReadiness();
           }
         } catch (error) {
@@ -591,12 +624,13 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           await client.startRun(run.id);
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) {
             set({
-              run: { ...run, status: 'accepted' },
-              runStatus: 'accepted',
+              run,
+              runStatus: asRunStatus(run.status),
               runProgress: 0,
               lastEventId: 0,
               taskAttempts: attemptsByTask(run.attempts ?? []),
             });
+            void get().loadRunHistory();
           }
         } catch (error) {
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) fail(error);
@@ -616,7 +650,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
             });
           }
@@ -638,7 +672,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
             });
           }
@@ -660,7 +694,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
             });
           }
@@ -687,7 +721,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
             if (get().run?.id === runId) {
               set({
                 run: refreshed,
-                runStatus: toRunStatus(refreshed.status),
+                runStatus: asRunStatus(refreshed.status),
                 taskAttempts: attemptsByTask(refreshed.attempts ?? []),
               });
             }
@@ -710,7 +744,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
             });
           }
@@ -729,12 +763,43 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
             });
           }
+          if (TERMINAL_RUN_STATUSES.has(updated.status)) void get().loadRunHistory();
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        }
+      },
+      loadRunHistory: async (append = false) => {
+        const client = getClient();
+        const projectId = get().project?.id;
+        if (!projectId) return;
+        const cursor = append ? get().runHistoryCursor : null;
+        try {
+          const page = await client.listProjectRuns(projectId, cursor);
+          set((state) => ({
+            runHistory: append ? [...state.runHistory, ...page.runs] : page.runs,
+            runHistoryCursor: page.next_cursor,
+          }));
+        } catch (error) {
+          fail(error);
+        }
+      },
+      openRun: async (runId) => {
+        const client = getClient();
+        try {
+          const run = await client.getRun(runId);
+          set({
+            run,
+            runStatus: asRunStatus(run.status),
+            taskAttempts: attemptsByTask(run.attempts ?? []),
+            lastEventId: 0,
+            runProgress: 0,
+          });
+        } catch (error) {
+          fail(error);
         }
       },
       loadNodes: async () => {

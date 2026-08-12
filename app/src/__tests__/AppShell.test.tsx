@@ -47,6 +47,7 @@ const client = {
   listProjects: vi.fn().mockResolvedValue([project]),
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
+  listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
 } as unknown as CoordinatorClient;
 
 beforeEach(() => {

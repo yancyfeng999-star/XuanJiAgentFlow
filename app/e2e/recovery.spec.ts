@@ -274,4 +274,26 @@ test.describe('recovery and control paths', () => {
     // here we assert the durable preconditions the supervisor relies on.
     expect(fs.statSync(path.join(meta!.data_dir, 'coordinator.db')).size).toBeGreaterThan(0);
   });
+
+  test('switching back to a project restores its latest non-terminal run', async ({ page, request }) => {
+    const project = await apiCreateProject(request, `E2E Restore ${Date.now()}`);
+    const workflow = await apiPlan(request, project.id);
+    await apiReview(request, workflow.id);
+    const run = await apiCreateRun(request, workflow.id);
+
+    await page.goto('/');
+    await ensureWorkspaceReady(page);
+    await page.locator('.project-rail select').selectOption(project.id);
+    await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });
+
+    const other = await apiCreateProject(request, `E2E Restore Other ${Date.now()}`);
+    await page.reload();
+    await ensureWorkspaceReady(page);
+    await page.locator('.project-rail select').selectOption(other.id);
+    await expect(page.getByLabel('顶部运行栏').getByText('未运行')).toBeVisible();
+
+    await page.locator('.project-rail select').selectOption(project.id);
+    await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel('运行历史')).toBeVisible();
+  });
 });

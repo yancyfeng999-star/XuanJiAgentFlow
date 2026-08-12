@@ -251,6 +251,32 @@ class RunRepository:
             if cursor.rowcount != 1:
                 raise KeyError(attempt.id)
 
+    def list_for_project(
+        self,
+        project_id: str,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> tuple[list[Run], str | None]:
+        query = (
+            "SELECT runs.* FROM runs "
+            "JOIN workflows ON runs.workflow_id = workflows.id "
+            "WHERE workflows.project_id=?"
+        )
+        params: list = [project_id]
+        if cursor:
+            created_at, _, run_id = cursor.partition("~")
+            query += " AND (runs.created_at < ? OR (runs.created_at = ? AND runs.id < ?))"
+            params += [created_at, created_at, run_id]
+        query += " ORDER BY runs.created_at DESC, runs.id DESC LIMIT ?"
+        params.append(limit + 1)
+        rows = self.database.connection.execute(query, params).fetchall()
+        next_cursor = None
+        if len(rows) > limit:
+            rows = rows[:limit]
+            last = rows[-1]
+            next_cursor = f"{last['created_at']}~{last['id']}"
+        return [self._run(row) for row in rows], next_cursor
+
     def latest_attempts(self, run_id: str) -> dict[str, TaskAttempt]:
         return self._latest_attempts(run_id)
 

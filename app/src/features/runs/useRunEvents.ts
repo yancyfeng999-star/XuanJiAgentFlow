@@ -5,7 +5,6 @@ import {
   applyRunEvent,
   computeRunProgress,
   createInitialRunEventState,
-  mapRunStatus,
   type RunEvent,
   type RunEventState,
 } from './runEventState';
@@ -42,25 +41,32 @@ function parseEvent(raw: unknown): RunEvent | null {
   };
 }
 
+const QUIESCENT_STATUSES = new Set(['paused', 'blocked', 'success', 'failed', 'cancelled']);
+
 function syncWorkspace(state: RunEventState) {
   const store = useWorkspaceStore.getState();
-  const mapped = mapRunStatus(state.runStatus);
   const taskIds = store.workflow?.tasks.map((task) => task.id) ?? Object.keys(state.taskAttempts);
   const progress = computeRunProgress(taskIds, state.taskAttempts);
   const currentRun = store.run;
+  const previousStatus = currentRun?.status;
+  const nextStatus = state.runStatus ?? currentRun?.status;
   store.applyRunMonitor({
     lastEventId: state.lastEventId,
-    runStatus: mapped,
+    runStatus: nextStatus,
     runProgress: progress,
     taskAttempts: state.taskAttempts,
     run: currentRun
       ? {
           ...currentRun,
-          status: state.runStatus ?? currentRun.status,
+          status: nextStatus ?? currentRun.status,
           attempts: Object.values(state.taskAttempts),
         }
       : currentRun,
   });
+  // 进入静止态后用服务端快照收敛，恢复 allowed_actions 等权威字段
+  if (nextStatus && nextStatus !== previousStatus && QUIESCENT_STATUSES.has(nextStatus)) {
+    void store.refreshRun();
+  }
 }
 
 export function useRunEvents(runId: string | null): UseRunEventsResult {

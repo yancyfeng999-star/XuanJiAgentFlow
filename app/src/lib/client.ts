@@ -113,6 +113,7 @@ export interface TaskAttempt {
   completed_at: string | null;
   error: Record<string, unknown> | null;
   result_manifest: Record<string, unknown> | null;
+  allowed_actions?: string[];
 }
 
 export interface Run {
@@ -125,6 +126,26 @@ export interface Run {
   attempts: TaskAttempt[];
   workflow_version?: number;
   review_snapshot_hash?: string | null;
+  allowed_actions?: string[];
+}
+
+export interface ProjectRunSummary {
+  id: string;
+  workflow_id: string;
+  workflow_version: number | null;
+  review_snapshot_hash: string | null;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  allowed_actions: string[];
+  task_count: number;
+  task_status_counts: Record<string, number>;
+}
+
+export interface ProjectRunPage {
+  runs: ProjectRunSummary[];
+  next_cursor: string | null;
 }
 
 export interface Artifact {
@@ -283,6 +304,7 @@ export interface CoordinatorClient {
   reviewWorkflow(workflowId: string, input: { snapshot_hash: string; acknowledged_warnings: string[] }): Promise<Workflow>;
   createRevision(workflowId: string): Promise<Workflow>;
   createRun(workflowId: string): Promise<Run>;
+  listProjectRuns(projectId: string, cursor?: string | null, limit?: number): Promise<ProjectRunPage>;
   startRun(runId: string): Promise<{ id: string; status: 'accepted' }>;
   getRun(runId: string): Promise<Run>;
   pauseRun(runId: string): Promise<Run>;
@@ -362,6 +384,11 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     reviewWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}/review`, json('POST', input)),
     createRevision: (workflowId) => request(`/api/workflows/${id(workflowId)}/revisions`, json('POST')),
     createRun: (workflowId) => request(`/api/workflows/${id(workflowId)}/runs`, json('POST')),
+    listProjectRuns: (projectId, cursor = null, limit = 20) => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (cursor) params.set('cursor', cursor);
+      return request(`/api/projects/${id(projectId)}/runs?${params.toString()}`);
+    },
     startRun: (runId) => request(`/api/runs/${id(runId)}/start`, json('POST')),
     getRun: (runId) => request(`/api/runs/${id(runId)}`),
     pauseRun: (runId) => request(`/api/runs/${id(runId)}/pause`, json('POST')),
