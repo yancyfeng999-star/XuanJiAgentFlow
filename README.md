@@ -6,9 +6,9 @@
 | 产品 / 工程英文 | **XuanJiAgentFlowApp**（历史工程名 AgentFlow） |
 | 形态 | macOS 本地桌面 App（可安装 DMG） |
 | 版本方向 | **3.0**（完成 2.0 承诺的真执行闭环，不扩产品范围） |
-| 安装包示例 | `璇玑_0.3.0_aarch64.dmg` |
+| 安装包示例 | `璇玑_0.3.3_aarch64.dmg` |
 | Slogan | **思考在先，执行在后** |
-| 本仓路径 | `/Users/yancyfeng/Desktop/XuanJiAgentFlow/XuanJiAgentFlowApp` |
+| 本仓路径 | `/Users/yancyfeng/Desktop/Mac Dpxx项目/自研软件/XuanJiAgentFlow` |
 
 > **一句话**  
 > 可安装的本地控制台：画布编排 + 多 Hermes 节点真跑 + 产物回写。
@@ -66,7 +66,7 @@ App = 图形手脚；Skill = 对话手脚。
 真实远程服务器不需要预先配进安装包：安装后在界面填写服务器、SSH 用户、私钥路径、Node Token 与 Planner Key。
 
 ```text
-release/xuanji-3.0-cn-errors-20260729/璇玑_0.3.0_aarch64.dmg
+release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg
 ```
 
 安装：打开 DMG → 拖拽「璇玑.app」到 `Applications`。  

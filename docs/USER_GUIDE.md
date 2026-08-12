@@ -60,7 +60,7 @@ npm run tauri dev
 
 ## 从 DMG 安装（未签名）
 
-1. 打开 `璇玑_0.3.0_aarch64.dmg`
+1. 打开 `璇玑_0.3.3_aarch64.dmg`
 2. 将「璇玑.app」拖到 `Applications`
 3. 首次打开若被拦截：系统设置 → 隐私与安全性 → 仍要打开
 4. 启动后：

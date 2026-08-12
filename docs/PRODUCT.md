@@ -1,7 +1,7 @@
 # 璇玑 App（桌面产品 · XuanJiAgentFlowApp）
 
 **共同 slogan：** 思考在先，执行在后  
-**本仓：** `/Users/yancyfeng/Desktop/XuanJiAgentFlow/XuanJiAgentFlowApp`  
+**本仓：** `/Users/yancyfeng/Desktop/Mac Dpxx项目/自研软件/XuanJiAgentFlow`  
 **历史工程名：** AgentFlow
 
 ---
@@ -51,7 +51,7 @@
 | 项 | 状态 |
 |----|------|
 | 版本方向 | **3.0**（完成 2.0 承诺的真执行闭环，**不扩**产品范围） |
-| 安装包示例 | `璇玑_0.3.0_aarch64.dmg`（arm64） |
+| 安装包示例 | `璇玑_0.3.3_aarch64.dmg`（arm64） |
 | 签名 | 本机 ad-hoc；**未** Apple 公证 / Staple |
 | 分发 | **未** App Store；**未** Win / Linux 首发 |
 | 外部验收 | 真实云账号长压、真实服务器 Hermes 长稳等属外部验收 |

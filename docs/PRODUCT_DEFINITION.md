@@ -72,14 +72,14 @@ AI 自动规划 → 可视化编辑 → 人工审核冻结 → 多节点真执�
 | Slogan | 思考在先，执行在后 |
 | 出处 | 《尚书·舜典》「在璇玑玉衡，以齐七政」 |
 | 意象 | 古代浑天仪：观测、度量、把复杂天象收成可执行的秩序 |
-| 本仓 | `/Users/yancyfeng/Desktop/XuanJiAgentFlow/XuanJiAgentFlowApp` |
+| 本仓 | `/Users/yancyfeng/Desktop/Mac Dpxx项目/自研软件/XuanJiAgentFlow` |
 
 ## 版本语义（读者向）
 
 | 说法 | 含义 |
 |------|------|
 | 产品方向 3.0 | 完成 2.0 已承诺的 **真执行闭环**，不扩 scope |
-| 安装包 0.3.0 | 当前 DMG / app 版本号（arm64） |
+| 安装包 0.3.3 | 当前 DMG / app 版本号（arm64） |
 | 未宣称完成 | Apple 公证、商店分发、Win/Linux、真实云账号长压 |
 
 ---

@@ -1,6 +1,7 @@
 # 当前真实状态
 
-> 日期：2026-07-29  
+> 能力验证日期：2026-07-29  
+> 事实核对日期：2026-08-12（仅核对版本号与路径，未重跑测试；重跑后更新本文）  
 > 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁、真实 Node Agent 集成测试与 Computer Use 桌面终验。只记录**已验证**能力。
 
 ## 产品定位（已落地方向）
@@ -54,9 +55,10 @@ E2E 使用 `scripts/e2e_stack.py` 启动 Coordinator + 2 个 FakeNode HTTP 服�
 
 ## 构建产物说明
 
-- 本地 ad-hoc 签名 macOS `.app` + **可安装 DMG** 已构建并归档：
-  - App: `release/xuanji-3.0-cn-errors-20260729/璇玑.app`
-  - DMG: `release/xuanji-3.0-cn-errors-20260729/璇玑_0.3.0_aarch64.dmg`
+- 本地 ad-hoc 签名 macOS **可安装 DMG / PKG** 已构建并归档：
+  - DMG: `release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg`
+  - PKG: `release/xuanji-0.3.3-20260811/璇玑-0.3.3.pkg`
+  - 校验值见 `release/README.md`
 - `release/archive/` 只保存历史候选版本；当前安装请以 `release/README.md` 为准。
 - Sidecar：PyInstaller 单文件 `xuanji-coordinator`（Mach-O arm64）随应用打包，不依赖系统 Python。
 - 远端服务器 / SSH 用户 / 私钥路径 / Node Token / Planner Key：**软件界面填写**，不写死进安装包。
