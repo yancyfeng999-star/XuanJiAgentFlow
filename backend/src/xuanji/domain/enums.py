@@ -14,6 +14,7 @@ class RunStatus(StrEnum):
     CANCELLING = "cancelling"
     CANCELLED = "cancelled"
     SUCCESS = "success"
+    SUCCESS_WITH_WARNINGS = "success_with_warnings"
     FAILED = "failed"
     BLOCKED = "blocked"
 
@@ -33,6 +34,7 @@ class TaskStatus(StrEnum):
     CANCELLED = "cancelled"
     SKIPPED = "skipped"
     BLOCKED = "blocked"
+    NEEDS_REVIEW = "needs_review"
 
 
 class NodeKind(StrEnum):
@@ -53,12 +55,13 @@ TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.DISPATCHING: {TaskStatus.RUNNING, TaskStatus.DISPATCH_FAILED, TaskStatus.BLOCKED},
     TaskStatus.DISPATCH_FAILED: {TaskStatus.RETRY_WAIT, TaskStatus.FAILED, TaskStatus.BLOCKED},
     TaskStatus.RUNNING: {TaskStatus.COLLECTING, TaskStatus.FAILED, TaskStatus.CANCELLING, TaskStatus.BLOCKED},
-    TaskStatus.COLLECTING: {TaskStatus.SUCCESS, TaskStatus.ARTIFACT_FAILED, TaskStatus.BLOCKED},
+    TaskStatus.COLLECTING: {TaskStatus.SUCCESS, TaskStatus.ARTIFACT_FAILED, TaskStatus.BLOCKED, TaskStatus.NEEDS_REVIEW},
     TaskStatus.ARTIFACT_FAILED: {TaskStatus.RETRY_WAIT, TaskStatus.FAILED, TaskStatus.BLOCKED},
     TaskStatus.FAILED: {TaskStatus.RETRY_WAIT},
     TaskStatus.RETRY_WAIT: {TaskStatus.READY, TaskStatus.BLOCKED},
     TaskStatus.CANCELLING: {TaskStatus.CANCELLED},
     TaskStatus.BLOCKED: {TaskStatus.PENDING, TaskStatus.READY, TaskStatus.CANCELLED},
+    TaskStatus.NEEDS_REVIEW: {TaskStatus.RETRY_WAIT, TaskStatus.SKIPPED},
     TaskStatus.SUCCESS: set(),
     TaskStatus.CANCELLED: set(),
     TaskStatus.SKIPPED: set(),
@@ -66,12 +69,13 @@ TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
 
 RUN_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.PENDING: {RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.BLOCKED},
-    RunStatus.RUNNING: {RunStatus.PAUSED, RunStatus.CANCELLING, RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.BLOCKED},
+    RunStatus.RUNNING: {RunStatus.PAUSED, RunStatus.CANCELLING, RunStatus.SUCCESS, RunStatus.SUCCESS_WITH_WARNINGS, RunStatus.FAILED, RunStatus.BLOCKED},
     RunStatus.PAUSED: {RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.BLOCKED},
     RunStatus.CANCELLING: {RunStatus.CANCELLED},
     RunStatus.BLOCKED: {RunStatus.PENDING, RunStatus.RUNNING, RunStatus.CANCELLING},
     RunStatus.CANCELLED: set(),
     RunStatus.SUCCESS: set(),
+    RunStatus.SUCCESS_WITH_WARNINGS: set(),
     RunStatus.FAILED: set(),
 }
 

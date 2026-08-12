@@ -44,6 +44,9 @@ class TaskRecord:
     output_policy: dict[str, Any] = field(
         default_factory=lambda: {"mode": "discover", "expected": []}
     )
+    verify: list[dict[str, str]] = field(default_factory=list)
+    done_definition: list[str] = field(default_factory=list)
+    verify_results: list[dict[str, str]] = field(default_factory=list)
     dispatch_sha256: str = ""
 
 
@@ -244,6 +247,8 @@ class NodeExecutor:
                 source_task_id=dispatch["task_id"],
                 inputs=dispatch.get("inputs", []),
                 output_policy=dispatch.get("output_policy", {"mode": "discover", "expected": []}),
+                verify=list(dispatch.get("verify", [])),
+                done_definition=list(dispatch.get("done_definition", [])),
                 dispatch_sha256=signature,
             )
             self._save(record)
@@ -365,12 +370,26 @@ class NodeExecutor:
                 record.updated_at = now_iso()
                 self._save(record)
             elif hermes_status in {"completed", "success"}:
-                record.status = "success"
-                record.error = None
+                self._capture_output(task_id, hermes_state)
+                record.verify_results = self._run_verification(record)
+                failed = [item for item in record.verify_results if item["status"] == "fail"]
+                manual = [item for item in record.verify_results if item["status"] == "manual"]
+                if failed:
+                    record.status = "failed"
+                    record.error = "验证步骤未通过：" + "；".join(item["value"] for item in failed)
+                elif manual:
+                    record.status = "needs_review"
+                    record.error = None
+                else:
+                    record.status = "success"
+                    record.error = None
                 record.updated_at = now_iso()
                 self._save(record)
-                self._capture_output(task_id, hermes_state)
-                self._append_log(task_id, "task_succeeded")
+                self._append_log(
+                    task_id,
+                    "task_succeeded" if record.status == "success" else "task_verify_hold",
+                    status=record.status,
+                )
             elif hermes_status in {"failed", "error"}:
                 record.status = "failed"
                 record.error = visible_error(
@@ -387,6 +406,48 @@ class NodeExecutor:
             self._save(record)
             self._append_log(task_id, "poll_failed", error=str(record.error))
         return record
+
+    def _run_verification(self, record: TaskRecord) -> list[dict[str, str]]:
+        results: list[dict[str, str]] = []
+        workdir = Path(record.workdir)
+        for step in record.verify:
+            kind = step.get("kind", "")
+            value = step.get("value", "")
+            outcome = {"kind": kind, "value": value, "status": "fail", "detail": ""}
+            try:
+                if kind == "manual":
+                    outcome["status"] = "manual"
+                    outcome["detail"] = "需要人工确认"
+                elif kind == "file_exists":
+                    target = (workdir / self._safe_relative(value)).resolve()
+                    outcome["status"] = "pass" if target.is_file() and workdir in target.parents else "fail"
+                elif kind == "sha256":
+                    path, _, expected = value.partition("#")
+                    target = (workdir / self._safe_relative(path)).resolve()
+                    if not target.is_file() or workdir not in target.parents:
+                        outcome["status"] = "fail"
+                        outcome["detail"] = "文件不存在"
+                    else:
+                        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                        outcome["status"] = "pass" if digest == expected.lower() else "fail"
+                elif kind == "command":
+                    completed = subprocess.run(
+                        value,
+                        shell=True,
+                        cwd=workdir,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    outcome["status"] = "pass" if completed.returncode == 0 else "fail"
+                    outcome["detail"] = (completed.stderr or completed.stdout or "")[-500:]
+                else:
+                    outcome["detail"] = f"未知验证类型：{kind}"
+            except Exception as exc:
+                outcome["status"] = "fail"
+                outcome["detail"] = str(exc)[:500]
+            results.append(outcome)
+        return results
 
     def cancel(self, task_id: str) -> TaskRecord:
         record = self._load(task_id)

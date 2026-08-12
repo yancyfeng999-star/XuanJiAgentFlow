@@ -15,7 +15,7 @@ const workflow: Workflow = {
   reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [], tasks: [{
     id: 'research', workflow_id: 'workflow-1', title: 'Research', description: 'Read sources', prompt: 'Find evidence', agent_type: 'research', dependencies: [],
     execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: ['research'], timeout_seconds: 1800 },
-    retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], ui_position: { x: 100, y: 100 },
+    retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], writes: [], done_definition: [], verify: [], run_gate: 'auto', ui_position: { x: 100, y: 100 },
   }],
 };
 const client = {
@@ -25,7 +25,7 @@ const client = {
   validateWorkflow: vi.fn().mockResolvedValue({ valid: true, topological_order: ['research'] }),
   prepareReview: vi.fn().mockResolvedValue({
     snapshot: {}, snapshot_hash: 'a'.repeat(64), topological_order: ['research'], task_count: 1,
-    tasks: [{ task_id: 'research', title: 'Research', dependencies: [], writes: ['research.md'], verify: [], matching_node_ids: ['node-1'], timeout_seconds: 1800 }],
+    tasks: [{ task_id: 'research', title: 'Research', dependencies: [], writes: ['research.md'], verify: [], done_definition: [], run_gate: 'auto', matching_node_ids: ['node-1'], timeout_seconds: 1800 }],
     blockers: [], warnings: [],
   }),
   reviewWorkflow: vi.fn().mockResolvedValue({ ...workflow, status: 'reviewed' }),

@@ -56,7 +56,7 @@ function parseEvent(raw: unknown): RunEvent | null {
   };
 }
 
-const QUIESCENT_STATUSES = new Set(['paused', 'blocked', 'success', 'failed', 'cancelled']);
+const QUIESCENT_STATUSES = new Set(['paused', 'blocked', 'success', 'success_with_warnings', 'failed', 'cancelled']);
 
 function syncWorkspace(state: RunEventState) {
   const store = useWorkspaceStore.getState();

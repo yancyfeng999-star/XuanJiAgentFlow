@@ -106,6 +106,16 @@ export default function ReviewWorkspace({ onClose }: { onClose: () => void }) {
                         ? t('review.writes', { writes: task.writes.join(', ') })
                         : t('review.noWrites')}
                     </span>
+                    {task.verify.length > 0 && (
+                      <span>
+                        {t('review.verify', {
+                          verify: task.verify.map((step) => `${step.kind}: ${step.value}`).join('；'),
+                        })}
+                      </span>
+                    )}
+                    {task.verify.some((step) => step.kind === 'manual') && (
+                      <span className="review-manual-flag">{t('review.manualFlag')}</span>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -55,7 +55,7 @@ const workflow: Workflow = {
       required_tags: [], timeout_seconds: 1800,
     },
     retry_policy: { max_attempts: 3, delay_seconds: 1 },
-    expected_outputs: [{ path: 'research.md', media_type: 'text/markdown' }],
+    expected_outputs: [{ path: 'research.md', media_type: 'text/markdown' }], writes: [], done_definition: [], verify: [], run_gate: 'auto',
     ui_position: { x: 100, y: 100 },
   }],
 };

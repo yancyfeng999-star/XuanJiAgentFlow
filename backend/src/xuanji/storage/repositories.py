@@ -95,13 +95,15 @@ class WorkflowRepository:
                 task_data = _dump(task)
                 connection.execute(
                     """INSERT INTO tasks(id,workflow_id,title,description,prompt,agent_type,dependencies_json,
-                    execution_policy_json,retry_policy_json,expected_outputs_json,ui_position_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    execution_policy_json,retry_policy_json,expected_outputs_json,writes_json,done_definition_json,verify_json,run_gate,ui_position_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         task_data["id"], task_data["workflow_id"], task_data["title"], task_data["description"],
                         task_data["prompt"], task_data["agent_type"], _json(task_data["dependencies"]),
                         _json(task_data["execution_policy"]), _json(task_data["retry_policy"]),
-                        _json(task_data["expected_outputs"]), _json(task_data["ui_position"]),
+                        _json(task_data["expected_outputs"]), _json(task_data["writes"]),
+                        _json(task_data["done_definition"]), _json(task_data["verify"]), task_data["run_gate"],
+                        _json(task_data["ui_position"]),
                     ),
                 )
             connection.execute(
@@ -147,13 +149,15 @@ class WorkflowRepository:
                 task_data = _dump(task)
                 connection.execute(
                     """INSERT INTO tasks(id,workflow_id,title,description,prompt,agent_type,dependencies_json,
-                    execution_policy_json,retry_policy_json,expected_outputs_json,ui_position_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    execution_policy_json,retry_policy_json,expected_outputs_json,writes_json,done_definition_json,verify_json,run_gate,ui_position_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         task_data["id"], task_data["workflow_id"], task_data["title"], task_data["description"],
                         task_data["prompt"], task_data["agent_type"], _json(task_data["dependencies"]),
                         _json(task_data["execution_policy"]), _json(task_data["retry_policy"]),
-                        _json(task_data["expected_outputs"]), _json(task_data["ui_position"]),
+                        _json(task_data["expected_outputs"]), _json(task_data["writes"]),
+                        _json(task_data["done_definition"]), _json(task_data["verify"]), task_data["run_gate"],
+                        _json(task_data["ui_position"]),
                     ),
                 )
 
@@ -170,6 +174,10 @@ class WorkflowRepository:
                     "execution_policy": json.loads(task["execution_policy_json"]),
                     "retry_policy": json.loads(task["retry_policy_json"]),
                     "expected_outputs": json.loads(task["expected_outputs_json"]),
+                    "writes": json.loads(task["writes_json"]),
+                    "done_definition": json.loads(task["done_definition_json"]),
+                    "verify": json.loads(task["verify_json"]),
+                    "run_gate": task["run_gate"],
                     "ui_position": json.loads(task["ui_position_json"]),
                 }
             )

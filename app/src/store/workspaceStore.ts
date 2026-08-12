@@ -57,10 +57,11 @@ export type RunStatus =
   | 'cancelling'
   | 'cancelled'
   | 'success'
+  | 'success_with_warnings'
   | 'failed'
   | 'blocked';
 
-export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'success', 'failed']);
+export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'success', 'success_with_warnings', 'failed']);
 
 type TaskChanges = Partial<Omit<WorkflowTask, 'id' | 'workflow_id' | 'dependencies'>>;
 
@@ -178,6 +179,7 @@ function asRunStatus(status: string | undefined | null): RunStatus {
     case 'cancelling':
     case 'cancelled':
     case 'success':
+    case 'success_with_warnings':
     case 'failed':
     case 'blocked':
       return status;
@@ -539,6 +541,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           },
           retry_policy: { max_attempts: 3, delay_seconds: 1 },
           expected_outputs: [],
+          writes: [],
+          done_definition: [],
+          verify: [],
+          run_gate: 'auto',
           ui_position: { x: 80 + workflow.tasks.length * 40, y: 80 + workflow.tasks.length * 40 },
         }]);
       },

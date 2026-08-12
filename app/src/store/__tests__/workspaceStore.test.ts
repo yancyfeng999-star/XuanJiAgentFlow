@@ -17,12 +17,12 @@ const workflow: Workflow = {
     {
       id: 'research', workflow_id: 'workflow-1', title: 'Research', description: '', prompt: '', agent_type: 'research', dependencies: [],
       execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: [], timeout_seconds: 1800 },
-      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], ui_position: { x: 100, y: 100 },
+      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], writes: [], done_definition: [], verify: [], run_gate: 'auto', ui_position: { x: 100, y: 100 },
     },
     {
       id: 'write', workflow_id: 'workflow-1', title: 'Write', description: '', prompt: '', agent_type: 'business', dependencies: ['research'],
       execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: [], timeout_seconds: 1800 },
-      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'report.md', media_type: null }], ui_position: { x: 440, y: 100 },
+      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'report.md', media_type: null }], writes: [], done_definition: [], verify: [], run_gate: 'auto', ui_position: { x: 440, y: 100 },
     },
   ],
 };

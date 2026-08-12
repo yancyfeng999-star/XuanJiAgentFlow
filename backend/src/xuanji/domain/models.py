@@ -46,6 +46,11 @@ class ExpectedOutput(DomainModel):
     media_type: str | None = None
 
 
+class VerifyStep(DomainModel):
+    kind: Literal["command", "file_exists", "sha256", "manual"]
+    value: str = Field(min_length=1, max_length=10_000)
+
+
 class UIPosition(DomainModel):
     x: float = 0
     y: float = 0
@@ -62,7 +67,20 @@ class Task(DomainModel):
     execution_policy: ExecutionPolicy = Field(default_factory=ExecutionPolicy)
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     expected_outputs: list[ExpectedOutput] = Field(default_factory=list)
+    writes: list[str] = Field(default_factory=list)
+    done_definition: list[str] = Field(default_factory=list)
+    verify: list[VerifyStep] = Field(default_factory=list)
+    run_gate: Literal["auto", "review_before_start", "review_before_complete"] = "auto"
     ui_position: UIPosition = Field(default_factory=UIPosition)
+
+    @field_validator("writes")
+    @classmethod
+    def writes_are_safe(cls, value: list[str]) -> list[str]:
+        for path in value:
+            parts = path.replace("\\", "/").split("/")
+            if path.startswith(("/", "\\")) or not all(parts) or ".." in parts:
+                raise ValueError("写入路径必须是安全的相对路径")
+        return [path.replace("\\", "/") for path in value]
 
     @field_validator("dependencies")
     @classmethod

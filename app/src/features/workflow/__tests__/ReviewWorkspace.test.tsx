@@ -13,7 +13,7 @@ const workflow: Workflow = {
   tasks: [{
     id: 'research', workflow_id: 'workflow-1', title: 'Research', description: '', prompt: '', agent_type: 'research', dependencies: [],
     execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: [], timeout_seconds: 1800 },
-    retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [], ui_position: { x: 0, y: 0 },
+    retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [], writes: [], done_definition: [], verify: [], run_gate: 'auto', ui_position: { x: 0, y: 0 },
   }],
 };
 
@@ -21,7 +21,7 @@ const prepared = {
   snapshot: {}, snapshot_hash: 'b'.repeat(64), topological_order: ['research'], task_count: 1,
   tasks: [{
     task_id: 'research', title: 'Research', dependencies: [], writes: [], verify: [],
-    matching_node_ids: [], timeout_seconds: 1800,
+    done_definition: [], run_gate: 'auto', matching_node_ids: [], timeout_seconds: 1800,
   }],
   blockers: [],
   warnings: [{

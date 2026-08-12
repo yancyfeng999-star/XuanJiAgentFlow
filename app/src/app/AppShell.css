@@ -1044,3 +1044,4 @@
   text-align: left;
 }
 .artifact-download:disabled { opacity: 0.5; cursor: wait; }
+.review-manual-flag { color: var(--warning); font-weight: 600; }

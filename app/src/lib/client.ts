@@ -32,6 +32,11 @@ export interface ExpectedOutput {
   media_type: string | null;
 }
 
+export interface VerifyStep {
+  kind: 'command' | 'file_exists' | 'sha256' | 'manual';
+  value: string;
+}
+
 export interface WorkflowTask {
   id: string;
   workflow_id: string;
@@ -43,6 +48,10 @@ export interface WorkflowTask {
   execution_policy: ExecutionPolicy;
   retry_policy: RetryPolicy;
   expected_outputs: ExpectedOutput[];
+  writes: string[];
+  done_definition: string[];
+  verify: VerifyStep[];
+  run_gate: 'auto' | 'review_before_start' | 'review_before_complete';
   ui_position: { x: number; y: number };
 }
 
@@ -75,7 +84,9 @@ export interface ReviewTaskSummary {
   title: string;
   dependencies: string[];
   writes: string[];
-  verify: string[];
+  done_definition: string[];
+  verify: VerifyStep[];
+  run_gate: string;
   matching_node_ids: string[];
   timeout_seconds: number;
 }

@@ -39,6 +39,7 @@ const workflow: Workflow = {
     },
     retry_policy: { max_attempts: 3, delay_seconds: 1 },
     expected_outputs: [],
+    writes: [], done_definition: [], verify: [], run_gate: 'auto',
     ui_position: { x: 100, y: 100 },
   }],
 };

@@ -94,8 +94,10 @@ def prepare_review(workflow: Workflow, nodes: list[HermesNode]) -> dict[str, Any
             "task_id": task.id,
             "title": task.title,
             "dependencies": list(task.dependencies),
-            "writes": writes,
-            "verify": [],
+            "writes": sorted(set(writes) | set(task.writes)),
+            "done_definition": list(task.done_definition),
+            "verify": [step.model_dump(mode="json") for step in task.verify],
+            "run_gate": task.run_gate,
             "matching_node_ids": [node.id for node in matched],
             "timeout_seconds": task.execution_policy.timeout_seconds,
         })

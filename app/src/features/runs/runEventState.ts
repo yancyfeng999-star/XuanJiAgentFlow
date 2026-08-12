@@ -106,7 +106,7 @@ export function computeRunProgress(
   attempts: Record<string, { status: string } | undefined>,
 ): number {
   if (taskIds.length === 0) return 0;
-  const terminal = new Set(['success', 'skipped', 'cancelled', 'failed', 'artifact_failed']);
+  const terminal = new Set(['success', 'skipped', 'cancelled', 'failed', 'artifact_failed', 'needs_review']);
   const done = taskIds.filter((taskId) => terminal.has(attempts[taskId]?.status ?? '')).length;
   return Math.round((done / taskIds.length) * 100);
 }

@@ -3,15 +3,16 @@ from __future__ import annotations
 from xuanji.domain.enums import RunStatus, TaskStatus
 from xuanji.domain.models import Run, Task, TaskAttempt
 
-TERMINAL_RUN_STATUSES = {RunStatus.CANCELLED, RunStatus.SUCCESS, RunStatus.FAILED}
+TERMINAL_RUN_STATUSES = {RunStatus.CANCELLED, RunStatus.SUCCESS, RunStatus.SUCCESS_WITH_WARNINGS, RunStatus.FAILED}
 
 _RETRYABLE_TASK_STATUSES = {
     TaskStatus.FAILED,
     TaskStatus.ARTIFACT_FAILED,
     TaskStatus.DISPATCH_FAILED,
     TaskStatus.BLOCKED,
+    TaskStatus.NEEDS_REVIEW,
 }
-_SKIPPABLE_TASK_STATUSES = {TaskStatus.PENDING, TaskStatus.READY}
+_SKIPPABLE_TASK_STATUSES = {TaskStatus.PENDING, TaskStatus.READY, TaskStatus.NEEDS_REVIEW}
 
 
 def run_allowed_actions(run: Run) -> list[str]:

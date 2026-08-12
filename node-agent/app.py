@@ -25,6 +25,11 @@ class OutputPolicyRequest(BaseModel):
     expected: list[str] = Field(default_factory=list)
 
 
+class VerifyStepRequest(BaseModel):
+    kind: str = Field(pattern=r"^(command|file_exists|sha256|manual)$")
+    value: str = Field(min_length=1, max_length=10_000)
+
+
 class CreateTaskRequest(BaseModel):
     instruction: str | None = Field(default=None, min_length=1, max_length=200_000)
     goal: str | None = Field(default=None, min_length=1, max_length=200_000)
@@ -33,6 +38,10 @@ class CreateTaskRequest(BaseModel):
     task_id: str = Field(default="legacy", min_length=1)
     inputs: list[TaskInputRequest] = Field(default_factory=list)
     output_policy: OutputPolicyRequest = Field(default_factory=lambda: OutputPolicyRequest(mode="discover"))
+    writes: list[str] = Field(default_factory=list)
+    done_definition: list[str] = Field(default_factory=list)
+    verify: list[VerifyStepRequest] = Field(default_factory=list)
+    run_gate: str = Field(default="auto", pattern=r"^(auto|review_before_start|review_before_complete)$")
     idempotency_key: str = Field(
         min_length=1,
         max_length=128,
