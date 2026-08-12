@@ -24,6 +24,7 @@ from xuanji.planner.providers import OpenAIChatCompletionsProvider
 from xuanji.planner.service import PlannerService
 from xuanji.provisioning import ProvisioningService
 from xuanji.provisioning.ssh import app_known_hosts_path, ensure_known_hosts_file
+from xuanji.readiness import ReadinessService
 from xuanji.storage.database import Database
 from xuanji.storage.repositories import (
     ArtifactRepository,
@@ -89,6 +90,7 @@ class Services:
     app_config: ConfigRepository
     node_clients: dict[str, NodeClient]
     node_client_factory: NodeClientFactory
+    readiness: ReadinessService | None = None
     background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
 
     @staticmethod
@@ -261,6 +263,7 @@ def create_coordinator_app(
             node_clients=clients,
             node_client_factory=build_node_client,
         )
+        services.readiness = ReadinessService(services)
         app.state.services = services
         try:
             for project in projects.list():
@@ -310,6 +313,7 @@ def create_coordinator_app(
     from .nodes import router as nodes_router
     from .planner import router as planner_router
     from .projects import router as projects_router
+    from .readiness import router as readiness_router
     from .runs import router as runs_router
     from .workflows import router as workflows_router
 
@@ -321,6 +325,7 @@ def create_coordinator_app(
         planner_router,
         artifacts_router,
         events_router,
+        readiness_router,
     ):
         app.include_router(router)
 

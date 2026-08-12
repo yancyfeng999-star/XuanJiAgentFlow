@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkflowCanvas from '../features/canvas/WorkflowCanvas';
 import Inspector from '../features/inspector/Inspector';
 import NodeManager from '../features/nodes/NodeManager';
+import ReadinessCenter from '../features/onboarding/ReadinessCenter';
 import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
 import PlannerSettings from '../features/settings/PlannerSettings';
@@ -25,6 +26,9 @@ export default function AppShell() {
   const coordinatorBaseUrl = useWorkspaceStore((state) => state.coordinatorBaseUrl);
   const coordinatorSessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
+  const project = useWorkspaceStore((state) => state.project);
+  const readiness = useWorkspaceStore((state) => state.readiness);
+  const loadReadiness = useWorkspaceStore((state) => state.loadReadiness);
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
   const t = useT();
   const { locale } = useI18n();
@@ -66,7 +70,8 @@ export default function AppShell() {
   useEffect(() => {
     if (boot.phase !== 'ready') return;
     void runSilentUpdate();
-  }, [boot.phase]);
+    void loadReadiness();
+  }, [boot.phase, loadReadiness]);
 
   useEffect(() => {
     if (boot.phase !== 'ready') return;
@@ -133,7 +138,10 @@ export default function AppShell() {
       <RunBar />
       {panel === 'workflow' ? (
         <>
-          <WorkflowCanvas />
+          <div className="workflow-stage">
+            {(!project || (readiness && !readiness.ready)) && <ReadinessCenter />}
+            <WorkflowCanvas />
+          </div>
           <Inspector />
         </>
       ) : (

@@ -127,21 +127,15 @@ test.describe('recovery and control paths', () => {
     });
     expect(updated.ok()).toBeTruthy();
     await apiReview(request, workflow.id);
-    const run = await apiCreateRun(request, workflow.id);
-    await apiStart(request, run.id);
-    const finished = await waitForRun(
-      request,
-      run.id,
-      ['blocked', 'failed', 'success'],
-      15_000,
+    // 固定离线节点时，服务端就绪门禁必须拒绝创建 Run，而不是静默派发后谎报成功
+    const createResponse = await request.post(
+      `${coordinatorUrl()}/api/workflows/${workflow.id}/runs`,
     );
-    if (finished.status === 'success') {
-      const attempts = finished.attempts as Array<{ node_id: string }>;
-      // Scheduler ignored fixed mode — still must not assign offline node as success.
-      expect(attempts.every((a) => a.node_id !== offlineId)).toBeTruthy();
-    } else {
-      expect(['blocked', 'failed']).toContain(String(finished.status));
-    }
+    expect(createResponse.status()).toBe(409);
+    const error = await createResponse.json();
+    expect(error.error.code).toBe('run_not_ready');
+    const codes = error.error.details.issues.map((issue: { code: string }) => issue.code);
+    expect(codes).toContain('task_without_matching_node');
   });
 
   test('websocket reconnect replays with strictly increasing event_id', async ({ page }) => {

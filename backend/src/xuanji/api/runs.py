@@ -13,6 +13,20 @@ from .errors import APIError
 router = APIRouter(tags=["runs"])
 
 
+async def _require_ready(request: Request, project_id: str, workflow_id: str) -> None:
+    services = _services(request)
+    if services.readiness is None:
+        return
+    result = await services.readiness.check(project_id=project_id, workflow_id=workflow_id)
+    if not result["ready"]:
+        raise APIError(
+            409,
+            "run_not_ready",
+            "执行条件未满足，请先处理阻塞项",
+            {"issues": result["issues"], "checks": result["checks"]},
+        )
+
+
 def _services(request: Request):
     return request.app.state.services
 
@@ -48,6 +62,7 @@ async def create_run(workflow_id: str, request: Request) -> dict:
         raise APIError(404, "workflow_not_found", "工作流不存在", {"workflow_id": workflow_id})
     if workflow.status is not WorkflowStatus.REVIEWED:
         raise APIError(409, "workflow_not_reviewed", "工作流必须先审核，才能开始执行")
+    await _require_ready(request, workflow.project_id, workflow.id)
     run = Run(id=f"run-{uuid.uuid4().hex[:12]}", workflow_id=workflow.id)
     services.runs.create(run)
     services.artifacts.create_run(workflow.project_id, run.id, workflow.id)
@@ -66,7 +81,9 @@ async def get_run(run_id: str, request: Request) -> dict:
 
 @router.post("/api/runs/{run_id}/start", status_code=status.HTTP_202_ACCEPTED)
 async def start_run(run_id: str, request: Request) -> dict:
-    _run(request, run_id)
+    run = _run(request, run_id)
+    workflow = _workflow_for_run(request, run)
+    await _require_ready(request, workflow.project_id, workflow.id)
     services = _services(request)
     services.spawn_run_task(run_id, "start", services.execution.start(run_id))
     return {"id": run_id, "status": "accepted"}

@@ -12,6 +12,7 @@ import {
   type PlannerConfig,
   type PlannerConfigInput,
   type Project,
+  type ReadinessResult,
   type Run,
   type TaskAttempt,
   type Workflow,
@@ -57,6 +58,7 @@ export interface WorkspaceState {
   selectedTaskId: string | null;
   activePanel: WorkspacePanel;
   plannerConfig: PlannerConfig;
+  readiness: ReadinessResult | null;
   loading: boolean;
   error: WorkspaceError | null;
   canExecute: boolean;
@@ -93,6 +95,7 @@ export interface WorkspaceState {
   provisionNode: (nodeId: string, hermesPort: number) => Promise<void>;
   loadSettings: () => Promise<void>;
   savePlannerConfig: (input: PlannerConfigInput) => Promise<void>;
+  loadReadiness: (mode?: 'local' | 'deep') => Promise<void>;
   resetWorkspace: () => void;
 }
 
@@ -118,6 +121,7 @@ const initialState = {
   selectedTaskId: null as string | null,
   activePanel: 'workflow' as WorkspacePanel,
   plannerConfig: emptyPlannerConfig,
+  readiness: null as ReadinessResult | null,
   loading: false,
   error: null as WorkspaceError | null,
   canExecute: false,
@@ -210,6 +214,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
     let selectionGeneration = 0;
     let workflowRequest = 0;
     let nodesRequest = 0;
+    let readinessRequest = 0;
     const nodeRequests = new Map<string, number>();
     const fail = (error: unknown) => set({ error: workspaceError(error), loading: false });
     const currentWorkspace = (snapshot: number) => snapshot === generation;
@@ -265,6 +270,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         selectionGeneration += 1;
         workflowRequest += 1;
         nodesRequest += 1;
+        readinessRequest += 1;
         nodeRequests.clear();
         workspaceClient = createApiClient(normalized, coordinatorSessionToken);
         set({
@@ -281,6 +287,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           hermesNodes: [],
           selectedTaskId: null,
           plannerConfig: { ...emptyPlannerConfig },
+          readiness: null,
           loading: false,
           error: null,
           canExecute: false,
@@ -354,6 +361,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           ]);
           if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) {
             set({ project, workflow, loading: false, canExecute: workflow?.status === 'reviewed' });
+            void get().loadReadiness();
           }
         } catch (error) {
           if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) fail(error);
@@ -380,6 +388,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
             selectedTaskId: null,
             canExecute: false,
           }));
+          void get().loadReadiness();
         } catch (error) {
           if (currentSelection(workspace, selection, project.id) && request === workflowRequest) fail(error);
         }
@@ -477,6 +486,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           const reviewed = await client.reviewWorkflow(workflow.id);
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) {
             set({ workflow: reviewed, loading: false, canExecute: reviewed.status === 'reviewed' });
+            void get().loadReadiness();
           }
         } catch (error) {
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) fail(error);
@@ -636,7 +646,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const request = ++nodesRequest;
         try {
           const hermesNodes = await client.listNodes();
-          if (currentWorkspace(workspace) && request === nodesRequest) set({ hermesNodes, error: null });
+          if (currentWorkspace(workspace) && request === nodesRequest) {
+            set({ hermesNodes, error: null });
+            void get().loadReadiness();
+          }
         } catch (error) {
           if (currentWorkspace(workspace) && request === nodesRequest) fail(error);
         }
@@ -662,6 +675,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
               loading: false,
             };
           });
+          void get().loadReadiness();
         } catch (error) {
           if (currentWorkspace(workspace) && nodeRequests.get(input.id) === request) fail(error);
         }
@@ -686,6 +700,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           await client.deleteNode(nodeId);
           if (currentWorkspace(workspace) && nodeRequests.get(nodeId) === request) {
             set((state) => ({ hermesNodes: state.hermesNodes.filter((node) => node.id !== nodeId), error: null }));
+            void get().loadReadiness();
           }
         } catch (error) {
           if (currentWorkspace(workspace) && nodeRequests.get(nodeId) === request) fail(error);
@@ -730,9 +745,29 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         try {
           await getClient().setPlannerConfig(input);
           const plannerConfig = await getClient().getPlannerConfig();
-          if (request === settingsRequest) set({ plannerConfig, error: null });
+          if (request === settingsRequest) {
+            set({ plannerConfig, error: null });
+            void get().loadReadiness();
+          }
         } catch (error) {
           if (request === settingsRequest) fail(error);
+        }
+      },
+      loadReadiness: async (mode = 'local') => {
+        const client = getClient();
+        const workspace = generation;
+        const request = ++readinessRequest;
+        const projectId = get().project?.id ?? null;
+        const workflowId = get().workflow?.id ?? null;
+        try {
+          const readiness = await client.getReadiness({ projectId, workflowId, mode });
+          if (currentWorkspace(workspace) && request === readinessRequest) {
+            set({ readiness, canExecute: readiness.ready && get().workflow?.status === 'reviewed' });
+          }
+        } catch {
+          if (currentWorkspace(workspace) && request === readinessRequest) {
+            set({ readiness: null });
+          }
         }
       },
       resetWorkspace: () => {
@@ -742,6 +777,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         selectionGeneration += 1;
         workflowRequest += 1;
         nodesRequest += 1;
+        readinessRequest += 1;
         nodeRequests.clear();
         set({ ...initialState, plannerConfig: { ...emptyPlannerConfig } });
       },

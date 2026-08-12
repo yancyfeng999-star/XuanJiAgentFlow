@@ -745,6 +745,9 @@ def test_startup_registers_existing_projects_and_project_fk_conflict_is_409(tmp_
         project = create_project(client)
         workflow = plan_workflow(client, project["id"])
         review_workflow(client, workflow["id"])
+        create_node(client)
+        # 无真实节点时 diagnose 会把节点标记离线；恢复为在线以满足执行就绪门禁
+        assert client.patch("/api/nodes/node-1", json={"status": "online"}).status_code == 200
         assert client.post(f"/api/workflows/{workflow['id']}/runs").status_code == 201
         conflict = assert_error(client.delete(f"/api/projects/{project['id']}"), 409, "resource_in_use")
         assert conflict["details"] == {"resource": "project", "id": project["id"]}
@@ -805,6 +808,7 @@ def test_cors_and_websocket_origins_are_local_only(api_harness) -> None:
     project = create_project(client)
     workflow = plan_workflow(client, project["id"])
     review_workflow(client, workflow["id"])
+    create_node(client)
     run = client.post(f"/api/workflows/{workflow['id']}/runs").json()
     with pytest.raises(WebSocketDisconnect) as rejected_ws:
         with client.websocket_connect(
@@ -874,6 +878,9 @@ def test_background_start_failure_is_recorded_and_tasks_are_drained(tmp_path: Pa
         project = create_project(client)
         workflow = plan_workflow(client, project["id"])
         review_workflow(client, workflow["id"])
+        create_node(client)
+        # 无真实节点时 diagnose 会把节点标记离线；恢复为在线以满足执行就绪门禁
+        assert client.patch("/api/nodes/node-1", json={"status": "online"}).status_code == 200
         run = client.post(f"/api/workflows/{workflow['id']}/runs").json()
         assert client.post(f"/api/runs/{run['id']}/start").status_code == 202
         deadline = time.monotonic() + 1

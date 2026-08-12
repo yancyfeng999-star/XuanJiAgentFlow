@@ -179,6 +179,34 @@ export interface PlannerConfigInput {
   credential?: string;
 }
 
+export type ReadinessSeverity = 'blocking' | 'warning' | 'info';
+export type ReadinessAction = 'open_project' | 'open_planner' | 'open_nodes' | 'open_workflow' | 'retry';
+export type ReadinessCheckStatus = 'ready' | 'blocked' | 'warning' | 'unknown';
+
+export interface ReadinessIssue {
+  code: string;
+  severity: ReadinessSeverity;
+  title: string;
+  message: string;
+  action: ReadinessAction;
+  targetId: string | null;
+}
+
+export interface ReadinessResult {
+  ready: boolean;
+  checkedAt: string;
+  projectId: string | null;
+  workflowId: string | null;
+  checks: Record<string, ReadinessCheckStatus>;
+  issues: ReadinessIssue[];
+}
+
+export interface ReadinessQuery {
+  projectId?: string | null;
+  workflowId?: string | null;
+  mode?: 'local' | 'deep';
+}
+
 export interface CoordinatorErrorEnvelope {
   error: {
     code: string;
@@ -237,6 +265,7 @@ export interface CoordinatorClient {
   provisionNode(nodeId: string, hermesPort: number): Promise<{ node_id: string; completed: boolean; steps: Record<string, unknown>[] }>;
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
+  getReadiness(query?: ReadinessQuery): Promise<ReadinessResult>;
 }
 
 function isErrorEnvelope(value: unknown): value is CoordinatorErrorEnvelope {
@@ -314,5 +343,13 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),
+    getReadiness: (query = {}) => {
+      const params = new URLSearchParams();
+      if (query.projectId) params.set('project_id', query.projectId);
+      if (query.workflowId) params.set('workflow_id', query.workflowId);
+      if (query.mode) params.set('mode', query.mode);
+      const suffix = params.size ? `?${params.toString()}` : '';
+      return request(`/api/readiness${suffix}`);
+    },
   };
 }
