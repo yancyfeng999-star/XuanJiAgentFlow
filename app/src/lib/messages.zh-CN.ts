@@ -457,4 +457,10 @@ export const messages: Record<string, string> = {
   'run.status.success_with_warnings': '完成（含警告）',
   'review.verify': '验证步骤：{verify}',
   'review.manualFlag': '含人工确认步骤',
+  'app.bootError.restartCoordinator': '重启 Coordinator',
+  'app.bootError.copyDiagnostics': '复制诊断信息',
+  'app.bootError.quit': '退出',
+  'log.search': '搜索日志',
+  'log.searchPlaceholder': '筛选日志内容…',
+  'log.export': '导出（已脱敏）',
 };

@@ -457,4 +457,10 @@ export const messages: Record<string, string> = {
   'run.status.success_with_warnings': 'Completed with warnings',
   'review.verify': 'Verification: {verify}',
   'review.manualFlag': 'Contains manual verification',
+  'app.bootError.restartCoordinator': 'Restart Coordinator',
+  'app.bootError.copyDiagnostics': 'Copy diagnostics',
+  'app.bootError.quit': 'Quit',
+  'log.search': 'Search logs',
+  'log.searchPlaceholder': 'Filter log content…',
+  'log.export': 'Export (redacted)',
 };

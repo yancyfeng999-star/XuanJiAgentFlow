@@ -48,6 +48,29 @@ fn coordinator_status(supervisor: State<'_, SharedSupervisor>) -> RuntimeInfo {
 }
 
 #[tauri::command]
+fn restart_coordinator(
+    app: AppHandle,
+    supervisor: State<'_, SharedSupervisor>,
+    shutdown: State<'_, Arc<AtomicBool>>,
+) -> Result<RuntimeInfo, CommandError> {
+    let _ = supervisor.stop();
+    shutdown.store(false, Ordering::Relaxed);
+    match bootstrap_coordinator(&app, supervisor.as_ref()) {
+        Some(options) => {
+            monitor_coordinator(
+                Arc::clone(supervisor.inner()),
+                options,
+                Arc::clone(shutdown.inner()),
+            );
+            Ok(supervisor.status())
+        }
+        None => Err(CommandError::from(
+            "Coordinator 辅助程序不可用，无法重启".to_string(),
+        )),
+    }
+}
+
+#[tauri::command]
 fn list_tunnels(tunnels: State<'_, SharedTunnelRegistry>) -> Vec<TunnelRecord> {
     tunnels.list()
 }
@@ -346,6 +369,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(supervisor)
         .manage(tunnels)
+        .manage(Arc::clone(&monitor_shutdown))
         .setup(move |app| {
             if let Some(options) =
                 bootstrap_coordinator(&app.handle(), supervisor_for_setup.as_ref())
@@ -360,6 +384,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             coordinator_status,
+            restart_coordinator,
             select_project_dir,
             select_ssh_key,
             list_tunnels,
