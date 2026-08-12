@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from .database import Database
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 MIGRATION_1 = """
 CREATE TABLE projects (
@@ -176,7 +176,14 @@ def migration_3(connection) -> None:
     connection.execute("CREATE INDEX idx_attempts_run_task ON task_attempts(run_id, task_id, attempt DESC)")
 
 
-MIGRATIONS: dict[int, str | Callable] = {1: MIGRATION_1, 2: MIGRATION_2, 3: migration_3}
+MIGRATION_4 = """
+ALTER TABLE workflows ADD COLUMN reviewed_at TEXT;
+ALTER TABLE workflows ADD COLUMN reviewed_by TEXT;
+ALTER TABLE workflows ADD COLUMN review_snapshot_hash TEXT;
+ALTER TABLE workflows ADD COLUMN review_warnings_json TEXT NOT NULL DEFAULT '[]';
+"""
+
+MIGRATIONS: dict[int, str | Callable] = {1: MIGRATION_1, 2: MIGRATION_2, 3: migration_3, 4: MIGRATION_4}
 
 
 def migrate(database: Database) -> None:

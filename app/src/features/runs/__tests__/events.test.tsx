@@ -40,6 +40,7 @@ const workflow: Workflow = {
   planner_model: null,
   status: 'reviewed',
   graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [{
     id: 'research',

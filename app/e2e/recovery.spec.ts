@@ -158,7 +158,17 @@ test.describe('recovery and control paths', () => {
           body: JSON.stringify({ goal: 'ws replay', context: 'e2e' }),
         })
       ).json();
-      await fetch(`${coordinator}/api/workflows/${workflow.id}/review`, { method: 'POST' });
+      const prepared = await (
+        await fetch(`${coordinator}/api/workflows/${workflow.id}/review/prepare`, { method: 'POST' })
+      ).json();
+      await fetch(`${coordinator}/api/workflows/${workflow.id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snapshot_hash: prepared.snapshot_hash,
+          acknowledged_warnings: [...new Set(prepared.warnings.map((w) => w.code))],
+        }),
+      });
       const run = await (
         await fetch(`${coordinator}/api/workflows/${workflow.id}/runs`, { method: 'POST' })
       ).json();

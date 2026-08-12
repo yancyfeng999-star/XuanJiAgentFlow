@@ -56,7 +56,38 @@ export interface Workflow {
   status: WorkflowStatus;
   graph_json: Record<string, unknown>;
   tasks: WorkflowTask[];
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_snapshot_hash: string | null;
+  review_warnings: string[];
   created_at: string;
+}
+
+export interface ReviewIssue {
+  code: string;
+  task_id?: string;
+  title: string;
+  message: string;
+}
+
+export interface ReviewTaskSummary {
+  task_id: string;
+  title: string;
+  dependencies: string[];
+  writes: string[];
+  verify: string[];
+  matching_node_ids: string[];
+  timeout_seconds: number;
+}
+
+export interface ReviewPrepareResult {
+  snapshot: Record<string, unknown>;
+  snapshot_hash: string;
+  topological_order: string[];
+  task_count: number;
+  tasks: ReviewTaskSummary[];
+  blockers: ReviewIssue[];
+  warnings: ReviewIssue[];
 }
 
 export interface WorkflowUpdate {
@@ -92,6 +123,8 @@ export interface Run {
   completed_at: string | null;
   created_at: string;
   attempts: TaskAttempt[];
+  workflow_version?: number;
+  review_snapshot_hash?: string | null;
 }
 
 export interface Artifact {
@@ -246,7 +279,9 @@ export interface CoordinatorClient {
   getWorkflow(workflowId: string): Promise<Workflow>;
   updateWorkflow(workflowId: string, input: WorkflowUpdate): Promise<Workflow>;
   validateWorkflow(workflowId: string): Promise<{ valid: boolean; topological_order: string[] }>;
-  reviewWorkflow(workflowId: string): Promise<Workflow>;
+  prepareReview(workflowId: string): Promise<ReviewPrepareResult>;
+  reviewWorkflow(workflowId: string, input: { snapshot_hash: string; acknowledged_warnings: string[] }): Promise<Workflow>;
+  createRevision(workflowId: string): Promise<Workflow>;
   createRun(workflowId: string): Promise<Run>;
   startRun(runId: string): Promise<{ id: string; status: 'accepted' }>;
   getRun(runId: string): Promise<Run>;
@@ -323,7 +358,9 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     getWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}`),
     updateWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}`, json('PUT', input)),
     validateWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}/validate`, json('POST')),
-    reviewWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}/review`, json('POST')),
+    prepareReview: (workflowId) => request(`/api/workflows/${id(workflowId)}/review/prepare`, json('POST')),
+    reviewWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}/review`, json('POST', input)),
+    createRevision: (workflowId) => request(`/api/workflows/${id(workflowId)}/revisions`, json('POST')),
     createRun: (workflowId) => request(`/api/workflows/${id(workflowId)}/runs`, json('POST')),
     startRun: (runId) => request(`/api/runs/${id(runId)}/start`, json('POST')),
     getRun: (runId) => request(`/api/runs/${id(runId)}`),

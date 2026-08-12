@@ -54,7 +54,15 @@ export async function apiPlan(request: APIRequestContext, projectId: string, goa
 
 export async function apiReview(request: APIRequestContext, workflowId: string) {
   const base = coordinatorUrl();
-  const response = await request.post(`${base}/api/workflows/${workflowId}/review`);
+  const prepared = await request.post(`${base}/api/workflows/${workflowId}/review/prepare`);
+  expect(prepared.ok()).toBeTruthy();
+  const snapshot = await prepared.json();
+  const response = await request.post(`${base}/api/workflows/${workflowId}/review`, {
+    data: {
+      snapshot_hash: snapshot.snapshot_hash,
+      acknowledged_warnings: [...new Set(snapshot.warnings.map((w: { code: string }) => w.code))],
+    },
+  });
   expect(response.ok()).toBeTruthy();
   return response.json();
 }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request, status
@@ -7,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from xuanji.domain.enums import WorkflowStatus
 from xuanji.domain.models import Task, Workflow
+from xuanji.workflow_review import prepare_review, snapshot_hash
 
 from .errors import APIError, safe_validation_errors
 
@@ -23,6 +26,11 @@ class UpdateWorkflowRequest(BaseModel):
     goal: str | None = Field(default=None, min_length=1)
     graph_json: dict[str, Any] | None = None
     tasks: list[Task]
+
+
+class ReviewWorkflowRequest(BaseModel):
+    snapshot_hash: str = Field(min_length=64, max_length=64)
+    acknowledged_warnings: list[str] = Field(default_factory=list)
 
 
 def _services(request: Request):
@@ -110,12 +118,81 @@ async def validate_workflow(workflow_id: str, request: Request) -> dict:
     return {"valid": True, "topological_order": workflow.topological_order()}
 
 
-@router.post("/api/workflows/{workflow_id}/review")
-async def review_workflow(workflow_id: str, request: Request) -> dict:
+@router.post("/api/workflows/{workflow_id}/review/prepare")
+async def prepare_workflow_review(workflow_id: str, request: Request) -> dict:
     services = _services(request)
     workflow = _workflow(request, workflow_id)
-    if workflow.status is WorkflowStatus.DRAFT:
-        workflow.status = WorkflowStatus.REVIEWED
-        services.workflows.update(workflow)
-        services.artifacts.save_workflow(workflow.project_id, workflow)
+    return prepare_review(workflow, services.nodes.list())
+
+
+@router.post("/api/workflows/{workflow_id}/review")
+async def review_workflow(workflow_id: str, payload: ReviewWorkflowRequest, request: Request) -> dict:
+    services = _services(request)
+    workflow = _workflow(request, workflow_id)
+    if workflow.status is not WorkflowStatus.DRAFT:
+        return workflow.model_dump(mode="json")
+    prepared = prepare_review(workflow, services.nodes.list())
+    if payload.snapshot_hash != prepared["snapshot_hash"]:
+        raise APIError(
+            409,
+            "review_snapshot_stale",
+            "工作流在审核准备后已被修改，请重新打开审核",
+            {"expected": prepared["snapshot_hash"]},
+        )
+    if prepared["blockers"]:
+        raise APIError(
+            409,
+            "review_blocked",
+            "工作流存在阻塞项，不能审核",
+            {"blockers": prepared["blockers"]},
+        )
+    warning_codes = {warning["code"] for warning in prepared["warnings"]}
+    unacknowledged = sorted(warning_codes - set(payload.acknowledged_warnings))
+    if unacknowledged:
+        raise APIError(
+            409,
+            "review_warnings_unacknowledged",
+            "存在未确认的警告，请逐项确认后再审核",
+            {"unacknowledged": unacknowledged, "warnings": prepared["warnings"]},
+        )
+    workflow.status = WorkflowStatus.REVIEWED
+    workflow.reviewed_at = datetime.now(timezone.utc)
+    workflow.reviewed_by = "user"
+    workflow.review_snapshot_hash = prepared["snapshot_hash"]
+    workflow.review_warnings = sorted(warning_codes)
+    services.workflows.update(workflow)
+    services.artifacts.save_workflow(workflow.project_id, workflow)
     return workflow.model_dump(mode="json")
+
+
+@router.post("/api/workflows/{workflow_id}/revisions", status_code=status.HTTP_201_CREATED)
+async def create_workflow_revision(workflow_id: str, request: Request) -> dict:
+    services = _services(request)
+    source = _workflow(request, workflow_id)
+    if source.status is not WorkflowStatus.REVIEWED:
+        raise APIError(
+            409,
+            "revision_source_not_reviewed",
+            "只能从已审核的工作流创建修订",
+            {"workflow_id": workflow_id},
+        )
+    versions = services.workflows.list_versions(source.project_id)
+    next_version = max((item.version for item in versions), default=source.version) + 1
+    revision_id = f"workflow-{uuid.uuid4().hex[:12]}"
+    revision = Workflow(
+        id=revision_id,
+        project_id=source.project_id,
+        version=next_version,
+        goal=source.goal,
+        planner_provider=source.planner_provider,
+        planner_model=source.planner_model,
+        status=WorkflowStatus.DRAFT,
+        graph_json=dict(source.graph_json),
+        tasks=[
+            task.model_copy(update={"workflow_id": revision_id})
+            for task in source.tasks
+        ],
+    )
+    services.workflows.save(revision)
+    services.artifacts.save_workflow(source.project_id, revision)
+    return revision.model_dump(mode="json")

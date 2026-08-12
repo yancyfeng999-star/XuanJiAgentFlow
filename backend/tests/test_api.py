@@ -106,7 +106,16 @@ def plan_workflow(client: TestClient, project_id: str) -> dict:
 
 
 def review_workflow(client: TestClient, workflow_id: str) -> dict:
-    response = client.post(f"/api/workflows/{workflow_id}/review")
+    prepared = client.post(f"/api/workflows/{workflow_id}/review/prepare")
+    assert prepared.status_code == 200, prepared.text
+    snapshot = prepared.json()
+    response = client.post(
+        f"/api/workflows/{workflow_id}/review",
+        json={
+            "snapshot_hash": snapshot["snapshot_hash"],
+            "acknowledged_warnings": sorted({w["code"] for w in snapshot["warnings"]}),
+        },
+    )
     assert response.status_code == 200, response.text
     return response.json()
 

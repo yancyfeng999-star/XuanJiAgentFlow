@@ -11,6 +11,7 @@ const project: Project = {
 const workflow: Workflow = {
   id: 'workflow-1', project_id: 'project-1', version: 1, goal: 'Build report',
   planner_provider: null, planner_model: null, status: 'draft', graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [
     {
@@ -403,7 +404,7 @@ describe('workspace store', () => {
     await store.getState().plan({ goal: 'Build report' });
 
     expect(store.getState().canExecute).toBe(false);
-    await store.getState().reviewWorkflow();
+    await store.getState().reviewWorkflow('a'.repeat(64), []);
     expect(store.getState().canExecute).toBe(true);
 
     await store.getState().updateTask('research', { title: 'Blocked edit' });

@@ -44,6 +44,10 @@ def _run_payload(request: Request, run: Run) -> dict:
         attempt.model_dump(mode="json")
         for attempt in _services(request).runs.list_attempts(run.id)
     ]
+    workflow = _services(request).workflows.get(run.workflow_id)
+    if workflow is not None:
+        payload["workflow_version"] = workflow.version
+        payload["review_snapshot_hash"] = workflow.review_snapshot_hash
     return payload
 
 

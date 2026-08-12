@@ -13,6 +13,7 @@ import {
   type PlannerConfigInput,
   type Project,
   type ReadinessResult,
+  type ReviewPrepareResult,
   type Run,
   type TaskAttempt,
   type Workflow,
@@ -95,7 +96,9 @@ export interface WorkspaceState {
   connectTasks: (sourceTaskId: string, targetTaskId: string) => Promise<void>;
   disconnectTasks: (sourceTaskId: string, targetTaskId: string) => Promise<void>;
   disconnectTaskEdges: (edges: Array<{ source: string; target: string }>) => Promise<void>;
-  reviewWorkflow: () => Promise<void>;
+  prepareReview: () => Promise<ReviewPrepareResult | null>;
+  reviewWorkflow: (snapshotHash: string, acknowledgedWarnings: string[]) => Promise<void>;
+  createRevision: () => Promise<void>;
   executeWorkflow: () => Promise<void>;
   pauseRun: () => Promise<void>;
   resumeRun: () => Promise<void>;
@@ -505,7 +508,17 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         });
         await persistTasks(tasks);
       },
-      reviewWorkflow: async () => {
+      prepareReview: async () => {
+        const workflow = get().workflow;
+        if (!workflow) return null;
+        try {
+          return await getClient().prepareReview(workflow.id);
+        } catch (error) {
+          fail(error);
+          return null;
+        }
+      },
+      reviewWorkflow: async (snapshotHash, acknowledgedWarnings) => {
         const client = getClient();
         const workspace = generation;
         const selection = selectionGeneration;
@@ -517,17 +530,45 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         if (!begin(pending)) return;
         set({ error: null });
         try {
-          await client.validateWorkflow(workflow.id);
-          if (!currentSelection(workspace, selection, projectId, workflow.id) || request !== workflowRequest) return;
-          const reviewed = await client.reviewWorkflow(workflow.id);
+          const reviewed = await client.reviewWorkflow(workflow.id, {
+            snapshot_hash: snapshotHash,
+            acknowledged_warnings: acknowledgedWarnings,
+          });
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) {
             set({ workflow: reviewed, canExecute: reviewed.status === 'reviewed' });
             void get().loadReadiness();
           }
         } catch (error) {
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) fail(error);
+          throw error;
         } finally {
           end(pending);
+        }
+      },
+      createRevision: async () => {
+        const client = getClient();
+        const workspace = generation;
+        const selection = selectionGeneration;
+        const request = ++workflowRequest;
+        const projectId = get().project?.id;
+        const workflow = get().workflow;
+        if (!projectId || !workflow || workflow.status !== 'reviewed') return;
+        set({ error: null });
+        try {
+          const revision = await client.createRevision(workflow.id);
+          if (currentSelection(workspace, selection, projectId) && request === workflowRequest) {
+            set({
+              workflow: revision,
+              selectedTaskId: null,
+              canExecute: false,
+              project: get().project
+                ? { ...get().project!, active_workflow_version: revision.version }
+                : get().project,
+            });
+            void get().loadReadiness();
+          }
+        } catch (error) {
+          if (currentSelection(workspace, selection, projectId) && request === workflowRequest) fail(error);
         }
       },
       executeWorkflow: async () => {

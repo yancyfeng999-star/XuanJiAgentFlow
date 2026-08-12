@@ -84,6 +84,10 @@ class Workflow(DomainModel):
     status: WorkflowStatus = WorkflowStatus.DRAFT
     graph_json: dict[str, Any] = Field(default_factory=dict)
     tasks: list[Task] = Field(default_factory=list)
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    review_snapshot_hash: str | None = None
+    review_warnings: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")
