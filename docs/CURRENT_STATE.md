@@ -1,6 +1,6 @@
 # 当前真实状态
 
-> 能力验证日期：2026-07-29  
+> 能力验证日期：2026-08-12（候选分支 `candidate/ux-integration`，`scripts/verify-all.sh --skip-tauri-build` 全绿）  
 > 事实核对日期：2026-08-12（仅核对版本号与路径，未重跑测试；重跑后更新本文）  
 > 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁、真实 Node Agent 集成测试与 Computer Use 桌面终验。只记录**已验证**能力。
 
@@ -15,7 +15,25 @@
 - Python Coordinator（FastAPI）负责项目、工作流、调度、执行、恢复、节点与产物。
 - 远程 Node 仅监听 `127.0.0.1`，按任务临时 SSH 隧道访问（`StrictHostKeyChecking=yes`）。
 
-## 已通过测试验证的能力
+## 已通过测试验证的能力（2026-08-12 候选新增）
+
+| 领域 | 验证方式 | 说明 |
+|---|---|---|
+| 统一就绪检查 | pytest + Playwright | `GET /api/readiness` 六类检查；create/start run 服务端复检（`run_not_ready`） |
+| 审核快照 | pytest + Playwright | review/prepare 规范化快照哈希、stale 拒绝、警告确认、修订克隆 |
+| 运行状态保真 | vitest + Playwright | 前端不再折叠 pending/cancelling/blocked；切换项目恢复最近非终态 Run |
+| 项目 Run 历史 | pytest | `GET /api/projects/{id}/runs` 稳定游标分页、版本/快照绑定、汇总计数 |
+| 合法动作 | pytest + vitest | run/task `allowed_actions` 由后端裁定，前端按此渲染 |
+| 节点接入 | pytest + Playwright | 本机/远端向导、本地发现、SSH key 选择、host key inspect/confirm（防 TOCTOU） |
+| 分层诊断 | pytest + Playwright | DNS/TCP/SSH/Node Agent/Hermes 五步定位 |
+| 会话安全 | pytest | WS 一次性票据（30s、单次、绑定 run）；HTTP 不再接受 query 会话令牌；产物 header 认证 + Blob 下载 |
+| Node Agent 认证 | pytest | 空 token 启动失败；所有 `/v1/*` Bearer 校验（hmac 比较） |
+| 凭据存储 | pytest | CredentialStore 抽象 + macOS Keychain 后端；迁移先验证读回再删旧明文，失败保留 |
+| 任务交付合同 | pytest 集成 | writes/done_definition/verify/run_gate 全链路；manual → needs_review → run success_with_warnings |
+| 备份恢复 | pytest | SQLite online backup API；完整性校验；损坏备份拒绝 |
+| 可访问性 | Playwright | 对话框焦点陷阱、Escape、reduced-motion、控件可访问名称、≥12px 关键文本 |
+
+## 2026-07-29 基线已验证能力
 
 | 领域 | 验证方式 | 说明 |
 |---|---|---|

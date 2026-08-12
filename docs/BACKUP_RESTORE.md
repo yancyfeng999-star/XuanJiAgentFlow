@@ -7,16 +7,20 @@ Coordinator 数据目录（`~/Library/Application Support/com.xuanji.app/`）包
 - `coordinator.db`（SQLite，WAL 模式）：项目、工作流、节点、运行、事件与产物清单
 - `projects/`：项目产物文件
 - `credentials.json`（0600）：凭据明文（OS 用户边界保护）
-- `backups/`：人工时间点副本（当前无自动备份机制，属已知限制）
+- `backups/`：时间点副本（候选版本新增 online backup API；无自动定时备份，仍属已知限制）
 
 ## 备份步骤
 
-```bash
-cp ~/Library/Application\ Support/com.xuanji.app/coordinator.db* /目标备份目录/
-# 如需完整时间点：整目录复制（含 projects/ 与 credentials.json）
+候选版本起提供 SQLite online backup API（`xuanji.storage.backup`），在活跃 WAL 写入下也能产出一致副本：
+
+```python
+from xuanji.storage.backup import backup_database, restore_database, verify_backup
+backup_database(db_path, backup_path)   # online backup API，非直接复制 db/-wal/-shm
+verify_backup(backup_path)              # integrity_check + schema 版本校验
+restore_database(backup_path, dest)     # 先验证再恢复
 ```
 
-WAL 模式下连同 `-wal`/`-shm` 一起复制即可保证一致性。
+手工整目录复制仍是可用的替代方案；WAL 模式下需连同 `-wal`/`-shm` 一起复制。不要只复制活跃写入中的 `coordinator.db` 单文件。
 
 ## 恢复演练记录（2026-08-11，真实执行）
 

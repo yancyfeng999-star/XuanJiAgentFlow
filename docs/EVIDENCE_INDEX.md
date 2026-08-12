@@ -37,7 +37,7 @@
 | 2026-07-29 全量门禁 | `test` | 2026-07-29 | 见 `docs/XUANJI_3_VALIDATION_REPORT.md` | `scripts/verify-all.sh` | **历史证据，不代表当前候选** |
 | 0.3.3 安装资产 | `package` | 2026-08-11 | `release/xuanji-0.3.3-20260811/` | `release/README.md` 校验值 | 见第 4 节清单 |
 | 0.3.1→0.3.2→0.3.3 升级 | `update` | 2026-08-11 | 真实 GitHub Release 链路 | `release/README.md` 记录 | 历史记录，候选版本需重验 |
-| 候选实现（ux-integration） | 全部层级 | — | 候选 SHA 待定 | — | `not_run`（实现进行中） |
+| 候选实现（ux-integration） | `test` | 2026-08-12 | 候选分支 `candidate/ux-integration`（macOS 26.6.1 arm64） | `bash scripts/verify-all.sh --skip-tauri-build` | 全绿：backend 187 / node-agent 29 / vitest 72 / e2e 27 / cargo 13；其余层级见 `docs/releases/0.3.4-candidate-acceptance.md` 第 5 节 |
 
 ## 4. 所有者资产 SHA-256 清单（2026-08-12 生成）
 
