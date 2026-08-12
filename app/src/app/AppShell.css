@@ -986,3 +986,51 @@
 }
 .run-history-item.active { border-color: var(--primary); }
 .run-history-status { font-weight: 600; }
+
+/* ========== 节点向导与诊断 ========== */
+.node-wizard h2 { font-size: 14px; margin: 0 0 6px; }
+.node-wizard-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.node-wizard-choices button {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+}
+.node-wizard-choices button:hover, .node-wizard-choices button:focus-visible { border-color: var(--primary); }
+.node-wizard-choices span { font-size: 12px; color: var(--text-secondary); }
+.ssh-key-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.wizard-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.diagnose-steps { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.diagnose-steps li { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+.diagnose-steps li[data-status="ok"] strong { color: var(--success); }
+.diagnose-steps li[data-status="failed"] strong { color: var(--failed); }
+.diagnose-steps li[data-status="skipped"] strong { color: var(--text-secondary); }
+.diagnose-steps small { color: var(--text-secondary); overflow-wrap: anywhere; }
+.host-key { margin-top: 6px; }
+.host-key-list { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 6px; }
+.host-key-list li { display: grid; gap: 4px; font-size: 12px; }
+.host-key-list code { overflow-wrap: anywhere; }
+.confirm-inline { display: inline-flex; gap: 8px; align-items: center; font-size: 12px; }
+.project-actions { display: flex; gap: 6px; margin-top: 6px; }
+.project-rename { display: flex; gap: 4px; flex: 1; }
+.project-rename input { flex: 1; min-width: 0; }
+.project-create-details summary { cursor: pointer; font-size: 13px; margin: 10px 0 6px; }
+.confirm-dialog {
+  width: min(420px, 90vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  outline: none;
+}
+.confirm-dialog h2 { font-size: 15px; margin: 0 0 8px; }
+.confirm-dialog p { font-size: 13px; color: var(--text-secondary); }
+.confirm-dialog input { width: 100%; margin: 6px 0 12px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-actions .danger { color: var(--failed); }
+.icon-button.danger { color: var(--failed); }

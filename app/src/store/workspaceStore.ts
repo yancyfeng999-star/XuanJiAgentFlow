@@ -7,6 +7,7 @@ import {
   nodeUpdatePayload,
   type CoordinatorClient,
   type HermesNode,
+  type LocalDiscoverResult,
   type NodeInput,
   type PlanInput,
   type PlannerConfig,
@@ -36,6 +37,7 @@ export type WorkspacePanel = 'workflow' | 'nodes' | 'settings';
 
 export type PendingAction =
   | { kind: 'create_project'; key: 'new' }
+  | { kind: 'rename_project' | 'delete_project'; key: string }
   | { kind: 'plan' | 'review' | 'execute'; key: string }
   | { kind: 'pause' | 'resume' | 'cancel'; key: string }
   | { kind: 'retry_task' | 'skip_task'; key: string }
@@ -84,6 +86,7 @@ export interface WorkspaceState {
   lastEventId: number;
   taskAttempts: Record<string, TaskAttempt>;
   hermesNodes: HermesNode[];
+  localDiscover: LocalDiscoverResult | null;
   selectedTaskId: string | null;
   activePanel: WorkspacePanel;
   plannerConfig: PlannerConfig;
@@ -102,6 +105,8 @@ export interface WorkspaceState {
   clearError: () => void;
   loadProjects: () => Promise<void>;
   createProject: (name: string, rootPath?: string) => Promise<void>;
+  renameProject: (projectId: string, name: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   loadProject: (projectId: string) => Promise<void>;
   plan: (input: PlanInput) => Promise<void>;
   updateTask: (taskId: string, changes: TaskChanges) => Promise<void>;
@@ -125,6 +130,7 @@ export interface WorkspaceState {
   loadNodes: () => Promise<void>;
   saveNode: (input: NodeInput) => Promise<void>;
   diagnoseNode: (nodeId: string) => Promise<void>;
+  discoverLocalNode: () => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
   provisionNode: (nodeId: string, hermesPort: number) => Promise<void>;
   loadSettings: () => Promise<void>;
@@ -154,6 +160,7 @@ const initialState = {
   lastEventId: 0,
   taskAttempts: {} as Record<string, TaskAttempt>,
   hermesNodes: [] as HermesNode[],
+  localDiscover: null as LocalDiscoverResult | null,
   selectedTaskId: null as string | null,
   activePanel: 'workflow' as WorkspacePanel,
   plannerConfig: emptyPlannerConfig,
@@ -380,6 +387,45 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           await get().loadProject(project.id);
         } catch (error) {
           if (currentWorkspace(workspace) && request === workspaceRequest) fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      renameProject: async (projectId, name) => {
+        const client = getClient();
+        const workspace = generation;
+        const pending: PendingAction = { kind: 'rename_project', key: projectId };
+        if (!begin(pending)) return;
+        set({ error: null });
+        try {
+          const updated = await client.renameProject(projectId, name);
+          if (!currentWorkspace(workspace)) return;
+          set((state) => ({
+            projects: state.projects.map((item) => (item.id === projectId ? updated : item)),
+            project: state.project?.id === projectId ? updated : state.project,
+          }));
+        } catch (error) {
+          if (currentWorkspace(workspace)) fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      deleteProject: async (projectId) => {
+        const client = getClient();
+        const workspace = generation;
+        const pending: PendingAction = { kind: 'delete_project', key: projectId };
+        if (!begin(pending)) return;
+        set({ error: null });
+        try {
+          await client.deleteProject(projectId);
+          if (!currentWorkspace(workspace)) return;
+          const projects = get().projects.filter((item) => item.id !== projectId);
+          set({ projects });
+          if (get().project?.id === projectId) {
+            set({ project: null, workflow: null, run: null, runHistory: [], runHistoryCursor: null, canExecute: false });
+          }
+        } catch (error) {
+          if (currentWorkspace(workspace)) fail(error);
         } finally {
           end(pending);
         }
@@ -858,6 +904,14 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           fail(error);
         } finally {
           end(pending);
+        }
+      },
+      discoverLocalNode: async () => {
+        try {
+          const localDiscover = await getClient().discoverLocalNode();
+          set({ localDiscover });
+        } catch (error) {
+          fail(error);
         }
       },
       removeNode: async (nodeId) => {

@@ -32,6 +32,74 @@ def ensure_known_hosts_file(path: str | Path) -> Path:
     return target
 
 
+class HostKeyError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def scan_host_keys(host: str, port: int = 22, timeout: float = 8) -> list[dict[str, str]]:
+    """Probe a host's public keys without trusting them (ssh-keyscan + ssh-keygen -lf)."""
+    scan = subprocess.run(
+        ["ssh-keyscan", "-T", str(int(timeout)), "-p", str(port), host],
+        capture_output=True,
+        text=True,
+        timeout=timeout + 5,
+    )
+    lines = [line for line in scan.stdout.splitlines() if line and not line.startswith("#")]
+    if not lines:
+        raise HostKeyError("host_key_scan_failed", f"无法获取 {host} 的主机密钥：{scan.stderr.strip() or '无响应'}")
+    lookup = subprocess.run(
+        ["ssh-keygen", "-lf", "-"],
+        capture_output=True,
+        text=True,
+        input="\n".join(lines) + "\n",
+        timeout=10,
+    )
+    keys: list[dict[str, str]] = []
+    fingerprints = [line.split() for line in lookup.stdout.splitlines() if line.split()]
+    for raw, parts in zip(lines, fingerprints):
+        if len(parts) < 4:
+            continue
+        keys.append({
+            "host": host,
+            "algorithm": parts[3].strip("()"),
+            "fingerprint": parts[1],
+            "line": raw,
+        })
+    if not keys:
+        raise HostKeyError("host_key_scan_failed", f"无法解析 {host} 的主机密钥指纹")
+    return keys
+
+
+def known_host_entries(host: str, port: int, known_hosts_path: str | Path) -> set[str]:
+    """Return the set of 'algorithm base64key' entries recorded for host (plain, non-hashed)."""
+    path = ensure_known_hosts_file(known_hosts_path)
+    host_pattern = f"[{host}]:{port}" if port != 22 else host
+    entries: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and not parts[0].startswith("|"):
+            hosts = parts[0].split(",")
+            if host in hosts or host_pattern in hosts:
+                entries.add(" ".join(parts[1:3]))
+    return entries
+
+
+def record_host_key(known_hosts_path: str | Path, line: str) -> None:
+    """Append one verified host key line to the app known_hosts file."""
+    path = ensure_known_hosts_file(known_hosts_path)
+    existing = path.read_text(encoding="utf-8")
+    key_part = " ".join(line.split()[1:])
+    for raw in existing.splitlines():
+        if raw.strip() and " ".join(raw.split()[1:]) == key_part:
+            return
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line.rstrip("\n") + "\n")
+
+
+
 class SSHRunner:
     """Executes SSH commands for remote node provisioning.
 

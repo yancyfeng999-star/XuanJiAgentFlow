@@ -184,6 +184,38 @@ export interface HermesNode {
   credential_configured: boolean | null;
 }
 
+export interface DiagnoseStep {
+  step: 'dns' | 'tcp' | 'ssh' | 'node_agent' | 'hermes' | string;
+  status: 'ok' | 'failed' | 'skipped' | string;
+  message: string;
+}
+
+export interface DiagnoseResult {
+  health?: Record<string, unknown>;
+  capabilities?: Record<string, unknown>;
+  steps?: DiagnoseStep[];
+  node: HermesNode;
+}
+
+export interface HostKeyInfo {
+  algorithm: string;
+  fingerprint: string;
+  known: boolean;
+}
+
+export interface HostKeyInspectResult {
+  node_id: string;
+  host: string;
+  port: number;
+  keys: HostKeyInfo[];
+}
+
+export interface LocalDiscoverResult {
+  found: boolean;
+  path: string | null;
+  version: string | null;
+}
+
 export interface NodeInput {
   id: string;
   name: string;
@@ -295,6 +327,8 @@ export interface CoordinatorClient {
   listProjects(): Promise<Project[]>;
   createProject(input: { name: string; root_path?: string }): Promise<Project>;
   getProject(projectId: string): Promise<Project>;
+  renameProject(projectId: string, name: string): Promise<Project>;
+  deleteProject(projectId: string): Promise<{ deleted: boolean; artifacts_retained: boolean; root_path: string }>;
   getProjectWorkflow(projectId: string): Promise<Workflow | null>;
   plan(projectId: string, input: PlanInput): Promise<Workflow>;
   getWorkflow(workflowId: string): Promise<Workflow>;
@@ -318,7 +352,10 @@ export interface CoordinatorClient {
   createNode(input: NodeInput): Promise<HermesNode>;
   updateNode(nodeId: string, input: NodeUpdate): Promise<HermesNode>;
   deleteNode(nodeId: string): Promise<void>;
-  diagnoseNode(nodeId: string): Promise<Record<string, unknown>>;
+  diagnoseNode(nodeId: string): Promise<DiagnoseResult>;
+  discoverLocalNode(): Promise<LocalDiscoverResult>;
+  inspectHostKey(nodeId: string): Promise<HostKeyInspectResult>;
+  confirmHostKey(nodeId: string, input: { algorithm: string; fingerprint: string }): Promise<Record<string, unknown>>;
   provisionNode(nodeId: string, hermesPort: number): Promise<{ node_id: string; completed: boolean; steps: Record<string, unknown>[] }>;
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
@@ -375,6 +412,8 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     listProjects: () => request('/api/projects'),
     createProject: (input) => request('/api/projects', json('POST', input)),
     getProject: (projectId) => request(`/api/projects/${id(projectId)}`),
+    renameProject: (projectId, name) => request(`/api/projects/${id(projectId)}`, json('PATCH', { name })),
+    deleteProject: (projectId) => request(`/api/projects/${id(projectId)}`, json('DELETE')),
     getProjectWorkflow: (projectId) => request(`/api/projects/${id(projectId)}/workflow`),
     plan: (projectId, input) => request(`/api/projects/${id(projectId)}/plan`, json('POST', input)),
     getWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}`),
@@ -404,6 +443,9 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     updateNode: (nodeId, input) => request(`/api/nodes/${id(nodeId)}`, json('PATCH', nodeUpdatePayload(input))),
     deleteNode: (nodeId) => request(`/api/nodes/${id(nodeId)}`, json('DELETE')),
     diagnoseNode: (nodeId) => request(`/api/nodes/${id(nodeId)}/diagnose`, json('POST')),
+    discoverLocalNode: () => request('/api/nodes/local/discover', json('POST')),
+    inspectHostKey: (nodeId) => request(`/api/nodes/${id(nodeId)}/host-key/inspect`, json('POST')),
+    confirmHostKey: (nodeId, input) => request(`/api/nodes/${id(nodeId)}/host-key/confirm`, json('POST', input)),
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),

@@ -203,6 +203,7 @@ describe('editable workflow workspace', () => {
     expect(screen.getByLabelText('规划器接口密钥')).toHaveValue('');
 
     fireEvent.click(screen.getByRole('button', { name: '执行节点' }));
+    fireEvent.click(screen.getByRole('button', { name: /远程节点/ }));
     fireEvent.change(screen.getByLabelText('节点标识'), { target: { value: 'remote-1' } });
     fireEvent.change(screen.getByLabelText('节点名称'), { target: { value: 'Remote' } });
     fireEvent.change(screen.getByLabelText('节点地址'), { target: { value: 'http://remote.test:8642' } });
