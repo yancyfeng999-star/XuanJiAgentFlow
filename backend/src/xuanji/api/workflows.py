@@ -20,6 +20,7 @@ class PlanRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=200_000)
     context: str = ""
     constraints: dict[str, Any] = Field(default_factory=dict)
+    thinking_model_id: str | None = None
 
 
 class UpdateWorkflowRequest(BaseModel):
@@ -50,6 +51,22 @@ async def plan(project_id: str, payload: PlanRequest, request: Request) -> dict:
     project = services.projects.get(project_id)
     if project is None:
         raise APIError(404, "project_not_found", "项目不存在", {"project_id": project_id})
+    profile = None
+    if services.thinking_models is not None:
+        if payload.thinking_model_id:
+            profile = services.thinking_models.repository.get(payload.thinking_model_id)
+        else:
+            profile = services.thinking_models.repository.default()
+        if payload.thinking_model_id and profile is None:
+            raise APIError(404, "thinking_model_not_found", "思考模型不存在", {"id": payload.thinking_model_id})
+        if profile is not None and not profile.enabled:
+            raise APIError(409, "thinking_model_disabled", "思考模型已停用", {"id": profile.id})
+        if profile is not None and (services.planner is None or payload.thinking_model_id):
+            from xuanji.thinking_models.providers import provider_for
+            from xuanji.planner.service import PlannerService
+
+            provider = provider_for(profile, services.credentials)
+            services.planner = PlannerService(provider, model=profile.model_id, provider_name=profile.api_mode)
     if services.planner is None:
         raise APIError(
             503,
@@ -63,6 +80,10 @@ async def plan(project_id: str, payload: PlanRequest, request: Request) -> dict:
         payload.context,
         payload.constraints,
     )
+    if profile is not None:
+        workflow.thinking_model_id = profile.id
+        workflow.planner_provider = profile.api_mode
+        workflow.planner_model = profile.model_id
     versions = services.workflows.list_versions(project_id)
     if versions:
         workflow.version = max(item.version for item in versions) + 1

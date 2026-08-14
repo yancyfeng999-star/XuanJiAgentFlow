@@ -97,6 +97,7 @@ class Services:
     app_config: ConfigRepository
     node_clients: dict[str, NodeClient]
     node_client_factory: NodeClientFactory
+    thinking_models: Any | None = None
     readiness: ReadinessService | None = None
     session_tickets: SessionTicketStore = field(default_factory=SessionTicketStore)
     background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
@@ -276,6 +277,15 @@ def create_coordinator_app(
             node_clients=clients,
             node_client_factory=build_node_client,
         )
+        from xuanji.thinking_models import ThinkingModelRepository, ThinkingModelService
+
+        services.thinking_models = ThinkingModelService(
+            ThinkingModelRepository(database),
+            config_repository,
+            credentials,
+            config.db_path,
+        )
+        services.thinking_models.migrate_legacy()
         services.readiness = ReadinessService(services)
         app.state.services = services
         try:
@@ -327,6 +337,7 @@ def create_coordinator_app(
     from .readiness import router as readiness_router
     from .runs import router as runs_router
     from .session import router as session_router
+    from .thinking_models import router as thinking_models_router
     from .workflows import router as workflows_router
 
     for router in (
@@ -335,6 +346,7 @@ def create_coordinator_app(
         runs_router,
         nodes_router,
         planner_router,
+        thinking_models_router,
         artifacts_router,
         events_router,
         readiness_router,

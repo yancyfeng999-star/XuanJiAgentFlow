@@ -37,7 +37,7 @@ class OpenAIChatCompletionsProvider:
         self._transport = transport
         self._timeout = timeout
 
-    async def complete(self, messages: list[dict[str, str]], model: str) -> str:
+    async def complete(self, messages: list[dict[str, str]], model: str, *, reasoning_effort: str | None = None) -> str:
         api_key = self._credentials.get(self._credential_key)
         if not api_key:
             raise PlannerError("planner_credentials_missing", "规划器接口密钥尚未配置")

@@ -83,10 +83,10 @@ class WorkflowRepository:
         data = _dump(workflow)
         with self.database.transaction() as connection:
             connection.execute(
-                "INSERT INTO workflows(id,project_id,version,goal,planner_provider,planner_model,status,graph_json,reviewed_at,reviewed_by,review_snapshot_hash,review_warnings_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO workflows(id,project_id,version,goal,planner_provider,planner_model,thinking_model_id,status,graph_json,reviewed_at,reviewed_by,review_snapshot_hash,review_warnings_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     data["id"], data["project_id"], data["version"], data["goal"], data["planner_provider"],
-                    data["planner_model"], data["status"], _json(data["graph_json"]),
+                    data["planner_model"], data.get("thinking_model_id"), data["status"], _json(data["graph_json"]),
                     data["reviewed_at"], data["reviewed_by"], data["review_snapshot_hash"],
                     _json(data["review_warnings"]), data["created_at"],
                 ),
@@ -134,9 +134,9 @@ class WorkflowRepository:
         data = _dump(workflow)
         with self.database.transaction() as connection:
             cursor = connection.execute(
-                "UPDATE workflows SET goal=?,planner_provider=?,planner_model=?,status=?,graph_json=?,reviewed_at=?,reviewed_by=?,review_snapshot_hash=?,review_warnings_json=? WHERE id=?",
+                "UPDATE workflows SET goal=?,planner_provider=?,planner_model=?,thinking_model_id=?,status=?,graph_json=?,reviewed_at=?,reviewed_by=?,review_snapshot_hash=?,review_warnings_json=? WHERE id=?",
                 (
-                    data["goal"], data["planner_provider"], data["planner_model"],
+                    data["goal"], data["planner_provider"], data["planner_model"], data.get("thinking_model_id"),
                     data["status"], _json(data["graph_json"]),
                     data["reviewed_at"], data["reviewed_by"], data["review_snapshot_hash"],
                     _json(data["review_warnings"]), data["id"],
@@ -186,7 +186,9 @@ class WorkflowRepository:
         return Workflow.model_validate(
             {
                 "id": row["id"], "project_id": row["project_id"], "version": row["version"], "goal": row["goal"],
-                "planner_provider": row["planner_provider"], "planner_model": row["planner_model"], "status": row["status"],
+                "planner_provider": row["planner_provider"], "planner_model": row["planner_model"],
+                "thinking_model_id": row["thinking_model_id"] if "thinking_model_id" in row.keys() else None,
+                "status": row["status"],
                 "graph_json": json.loads(row["graph_json"]),
                 "reviewed_at": row["reviewed_at"], "reviewed_by": row["reviewed_by"],
                 "review_snapshot_hash": row["review_snapshot_hash"],

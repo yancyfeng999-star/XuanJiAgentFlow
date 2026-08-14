@@ -99,6 +99,7 @@ class Workflow(DomainModel):
     goal: str = Field(min_length=1)
     planner_provider: str | None = None
     planner_model: str | None = None
+    thinking_model_id: str | None = None
     status: WorkflowStatus = WorkflowStatus.DRAFT
     graph_json: dict[str, Any] = Field(default_factory=dict)
     tasks: list[Task] = Field(default_factory=list)

@@ -29,6 +29,15 @@ def _payload(config: dict[str, str] | None, credential_configured: bool | None) 
 @router.get("/config")
 async def get_config(request: Request) -> dict:
     services = request.app.state.services
+    default = services.thinking_models.repository.default() if services.thinking_models else None
+    if default is not None:
+        config = {
+            "base_url": str(default.base_url).rstrip("/"),
+            "model": default.model_id,
+            "credential_key": default.credential_key,
+        }
+        credential_configured = services.credentials.get(default.credential_key) is not None
+        return _payload(config, credential_configured)
     config = services.app_config.get("planner")
     if config is None:
         return _payload(None, False)
@@ -48,5 +57,28 @@ async def set_config(payload: PlannerConfigRequest, request: Request) -> dict:
         services.credentials.set(payload.credential_key, payload.credential)
     services.app_config.set("planner", config)
     services.planner = services.planner_factory(config, services.credentials)
+    if services.thinking_models is not None:
+        default = services.thinking_models.repository.default()
+        if default is None:
+            services.thinking_models.create(
+                {
+                    "display_name": "Default thinking model",
+                    "api_mode": "chat_completions",
+                    "base_url": config["base_url"],
+                    "model_id": config["model"],
+                    "is_default": True,
+                },
+                payload.credential,
+            )
+        else:
+            services.thinking_models.update(
+                default.id,
+                {
+                    "base_url": config["base_url"],
+                    "model_id": config["model"],
+                    "api_mode": "chat_completions",
+                },
+                payload.credential,
+            )
     credential_configured = services.credentials.get(payload.credential_key) is not None
     return _payload(config, credential_configured)

@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from .database import Database
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 7
 
 MIGRATION_1 = """
 CREATE TABLE projects (
@@ -190,12 +190,36 @@ ALTER TABLE tasks ADD COLUMN verify_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE tasks ADD COLUMN run_gate TEXT NOT NULL DEFAULT 'auto';
 """
 
+MIGRATION_6 = """
+CREATE TABLE thinking_model_profiles (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    provider_kind TEXT NOT NULL,
+    api_mode TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    credential_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    reasoning_effort TEXT,
+    last_test_status TEXT NOT NULL DEFAULT 'untested',
+    last_tested_at TEXT
+);
+CREATE UNIQUE INDEX idx_thinking_models_one_default ON thinking_model_profiles(is_default) WHERE is_default=1;
+"""
+
+MIGRATION_7 = """
+ALTER TABLE workflows ADD COLUMN thinking_model_id TEXT;
+"""
+
 MIGRATIONS: dict[int, str | Callable] = {
     1: MIGRATION_1,
     2: MIGRATION_2,
     3: migration_3,
     4: MIGRATION_4,
     5: MIGRATION_5,
+    6: MIGRATION_6,
+    7: MIGRATION_7,
 }
 
 
