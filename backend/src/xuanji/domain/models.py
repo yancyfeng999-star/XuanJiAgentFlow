@@ -46,6 +46,11 @@ class ExpectedOutput(DomainModel):
     media_type: str | None = None
 
 
+class VerifyStep(DomainModel):
+    kind: Literal["command", "file_exists", "sha256", "manual"]
+    value: str = Field(min_length=1, max_length=10_000)
+
+
 class UIPosition(DomainModel):
     x: float = 0
     y: float = 0
@@ -62,7 +67,20 @@ class Task(DomainModel):
     execution_policy: ExecutionPolicy = Field(default_factory=ExecutionPolicy)
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     expected_outputs: list[ExpectedOutput] = Field(default_factory=list)
+    writes: list[str] = Field(default_factory=list)
+    done_definition: list[str] = Field(default_factory=list)
+    verify: list[VerifyStep] = Field(default_factory=list)
+    run_gate: Literal["auto", "review_before_start", "review_before_complete"] = "auto"
     ui_position: UIPosition = Field(default_factory=UIPosition)
+
+    @field_validator("writes")
+    @classmethod
+    def writes_are_safe(cls, value: list[str]) -> list[str]:
+        for path in value:
+            parts = path.replace("\\", "/").split("/")
+            if path.startswith(("/", "\\")) or not all(parts) or ".." in parts:
+                raise ValueError("写入路径必须是安全的相对路径")
+        return [path.replace("\\", "/") for path in value]
 
     @field_validator("dependencies")
     @classmethod
@@ -81,9 +99,14 @@ class Workflow(DomainModel):
     goal: str = Field(min_length=1)
     planner_provider: str | None = None
     planner_model: str | None = None
+    thinking_model_id: str | None = None
     status: WorkflowStatus = WorkflowStatus.DRAFT
     graph_json: dict[str, Any] = Field(default_factory=dict)
     tasks: list[Task] = Field(default_factory=list)
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    review_snapshot_hash: str | None = None
+    review_warnings: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
 
     @model_validator(mode="after")

@@ -106,7 +106,16 @@ def plan_workflow(client: TestClient, project_id: str) -> dict:
 
 
 def review_workflow(client: TestClient, workflow_id: str) -> dict:
-    response = client.post(f"/api/workflows/{workflow_id}/review")
+    prepared = client.post(f"/api/workflows/{workflow_id}/review/prepare")
+    assert prepared.status_code == 200, prepared.text
+    snapshot = prepared.json()
+    response = client.post(
+        f"/api/workflows/{workflow_id}/review",
+        json={
+            "snapshot_hash": snapshot["snapshot_hash"],
+            "acknowledged_warnings": sorted({w["code"] for w in snapshot["warnings"]}),
+        },
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -417,6 +426,24 @@ def test_run_pause_resume_cancel_retry_and_skip_routes(api_harness) -> None:
     assert not app.state.services.execution._loops.get(cancel_run["id"])
 
 
+def test_create_node_is_online_when_agent_works_even_if_hostname_does_not_resolve(api_harness) -> None:
+    client, _, _, _ = api_harness
+    created = client.post(
+        "/api/nodes",
+        json={
+            "id": "node-unresolvable",
+            "name": "Unresolvable Host",
+            "kind": "local",
+            "api_url": "http://no-such-host.invalid",
+            "capabilities_json": {"models": ["fake-model"], "tools": ["terminal"], "tags": ["fake"]},
+            "max_concurrency": 1,
+            "credential": "node-secret",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "online"
+
+
 def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     client, _, _, _ = api_harness
     node = create_node(client)
@@ -599,7 +626,7 @@ def test_default_app_reports_planner_not_configured_and_persists_redacted_config
             503,
             "planner_not_configured",
         )
-        assert error["message"] == "规划器尚未配置，请先前往“设置”完成配置"
+        assert error["message"] == "思考模型尚未配置，请先前往“思考模型”完成配置"
         assert error["details"] == {"configured": False}
         secret = "planner-secret-never-echo"
         configured = client.put(
@@ -745,6 +772,9 @@ def test_startup_registers_existing_projects_and_project_fk_conflict_is_409(tmp_
         project = create_project(client)
         workflow = plan_workflow(client, project["id"])
         review_workflow(client, workflow["id"])
+        create_node(client)
+        # 无真实节点时 diagnose 会把节点标记离线；恢复为在线以满足执行就绪门禁
+        assert client.patch("/api/nodes/node-1", json={"status": "online"}).status_code == 200
         assert client.post(f"/api/workflows/{workflow['id']}/runs").status_code == 201
         conflict = assert_error(client.delete(f"/api/projects/{project['id']}"), 409, "resource_in_use")
         assert conflict["details"] == {"resource": "project", "id": project["id"]}
@@ -805,6 +835,7 @@ def test_cors_and_websocket_origins_are_local_only(api_harness) -> None:
     project = create_project(client)
     workflow = plan_workflow(client, project["id"])
     review_workflow(client, workflow["id"])
+    create_node(client)
     run = client.post(f"/api/workflows/{workflow['id']}/runs").json()
     with pytest.raises(WebSocketDisconnect) as rejected_ws:
         with client.websocket_connect(
@@ -874,6 +905,9 @@ def test_background_start_failure_is_recorded_and_tasks_are_drained(tmp_path: Pa
         project = create_project(client)
         workflow = plan_workflow(client, project["id"])
         review_workflow(client, workflow["id"])
+        create_node(client)
+        # 无真实节点时 diagnose 会把节点标记离线；恢复为在线以满足执行就绪门禁
+        assert client.patch("/api/nodes/node-1", json={"status": "online"}).status_code == 200
         run = client.post(f"/api/workflows/{workflow['id']}/runs").json()
         assert client.post(f"/api/runs/{run['id']}/start").status_code == 202
         deadline = time.monotonic() + 1

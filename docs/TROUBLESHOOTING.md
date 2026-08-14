@@ -18,7 +18,7 @@
 
 | 错误码 | 含义 | 处理 |
 |---|---|---|
-| `planner_not_configured` | 未配置 Planner | 设置 → 保存 base_url/model/key |
+| `planner_not_configured` | 未配置思考模型 | 思考模型 → 保存接口地址/model/key |
 | `planner_credentials_missing` | 未配置 API Key | 在设置中重新填写并保存 API Key |
 | `planner_invalid_output` | 模型输出无法校验 | 检查模型；系统最多自动修复一次 |
 
@@ -28,7 +28,7 @@ E2E MockPlanner 仅在 `scripts/e2e_stack.py` 中注入，生产路径不会静�
 
 - 界面、Coordinator API 与 Node Agent API 的用户可读错误统一使用中文。
 - `planner_not_configured` 等英文标识是稳定错误码，仅用于日志、测试和技术排障，不作为界面提示。
-- 上游 Planner、Hermes、SSH 或操作系统返回英文异常时，展示层会替换为对应的中文安全提示，避免泄露凭据或内部诊断文本。
+- 上游思考模型、Hermes、SSH 或操作系统返回英文异常时，展示层会替换为对应的中文安全提示，避免泄露凭据或内部诊断文本。
 - 未识别的错误统一显示「操作失败（错误码：…）」；排障时请同时记录错误码。
 
 ## 审核 / 编辑
@@ -67,13 +67,17 @@ bash scripts/verify-all.sh --skip-tauri-build
 - 端口冲突：设置 `E2E_COORDINATOR_PORT` / `E2E_VITE_PORT`。
 - Chromium：首次 `npx playwright install chromium`。
 
-## Tauri / .app 构建
+## Tauri / .app 构建（发布负责人专用）
+
+普通开发、测试和 PR 验证不要执行本节命令；它们会在 macOS 中注册 `.app`，造成应用菜单重复条目。浏览器验证请使用 `npm run dev`、`npm test` 和 `npm run build -- --outDir /tmp/xuanji-web-dist`。
+
+隔离发布环境中的历史流程如下，仅供明确授权的发布负责人参考：
 
 1. 前端：`cd app && npm run build`
 2. Sidecar：PyInstaller 或开发包装脚本
 3. `cd app && npm run build:tauri`
 
-签名失败、钥匙串无证书时：可 `--skip-tauri-build` 并保留 `cargo build --release` + `dist/`；签名/公证为外部验收。
+签名失败、钥匙串无证书时：退出发布包流程，回到默认的浏览器/Rust 库验证；`--skip-tauri-build` 只保留非 App 门禁，不会生成桌面包。签名/公证仍属外部验收。
 
 ## 旧代码残留
 

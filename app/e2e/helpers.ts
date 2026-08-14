@@ -54,7 +54,15 @@ export async function apiPlan(request: APIRequestContext, projectId: string, goa
 
 export async function apiReview(request: APIRequestContext, workflowId: string) {
   const base = coordinatorUrl();
-  const response = await request.post(`${base}/api/workflows/${workflowId}/review`);
+  const prepared = await request.post(`${base}/api/workflows/${workflowId}/review/prepare`);
+  expect(prepared.ok()).toBeTruthy();
+  const snapshot = await prepared.json();
+  const response = await request.post(`${base}/api/workflows/${workflowId}/review`, {
+    data: {
+      snapshot_hash: snapshot.snapshot_hash,
+      acknowledged_warnings: [...new Set(snapshot.warnings.map((w: { code: string }) => w.code))],
+    },
+  });
   expect(response.ok()).toBeTruthy();
   return response.json();
 }
@@ -78,5 +86,21 @@ export async function ensureWorkspaceReady(page: Page) {
   await expect(page).toHaveTitle('璇玑智能任务协作');
   await expect(page.getByText('璇玑')).toBeVisible({ timeout: 20_000 });
   // Boot should finish: either workspace rail or (rarely) boot error.
-  await expect(page.getByLabel('项目资源栏')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel('工作区导航')).toBeVisible({ timeout: 20_000 });
+}
+
+export async function openProjectsPanel(page: Page) {
+  await page.getByRole('navigation', { name: '工作区导航' }).getByRole('button', { name: '项目' }).click();
+  await expect(page.locator('.project-rail')).toBeVisible();
+}
+
+export async function openWorkflowPanel(page: Page) {
+  await page.getByRole('navigation', { name: '工作区导航' }).getByRole('button', { name: '工作流' }).click();
+  await expect(page.getByRole('main', { name: '工作流画布' })).toBeVisible();
+}
+
+export async function selectProject(page: Page, projectId: string) {
+  await openProjectsPanel(page);
+  await page.locator('#project-select').selectOption(projectId);
+  await openWorkflowPanel(page);
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AppShell from '../app/AppShell';
 import type { CoordinatorClient, Project, Workflow } from '../lib/client';
+import { applyTheme, initTheme, setThemePreference } from '../lib/theme';
 import { setWorkspaceClient, useWorkspaceStore } from '../store/workspaceStore';
 
 const project: Project = {
@@ -23,6 +24,7 @@ const workflow: Workflow = {
   planner_model: null,
   status: 'draft',
   graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [{
     id: 'server-task',
@@ -38,6 +40,7 @@ const workflow: Workflow = {
     },
     retry_policy: { max_attempts: 3, delay_seconds: 1 },
     expected_outputs: [],
+    writes: [], done_definition: [], verify: [], run_gate: 'auto',
     ui_position: { x: 100, y: 100 },
   }],
 };
@@ -46,6 +49,7 @@ const client = {
   listProjects: vi.fn().mockResolvedValue([project]),
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
+  listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
 } as unknown as CoordinatorClient;
 
 beforeEach(() => {
@@ -59,7 +63,7 @@ afterEach(cleanup);
 async function renderReadyShell() {
   render(<AppShell />);
   await waitFor(() => {
-    expect(screen.getByRole('navigation', { name: '项目资源栏' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '工作区导航' })).toBeInTheDocument();
   });
 }
 
@@ -67,10 +71,16 @@ describe('Xuanji 2.0 workspace shell', () => {
   it('renders exactly the four core workspace regions after coordinator is healthy', async () => {
     await renderReadyShell();
 
+    expect(screen.getByRole('navigation', { name: '工作区导航' })).toBeInTheDocument();
     expect(screen.getByRole('banner', { name: '顶部运行栏' })).toBeInTheDocument();
     expect(screen.getByRole('main', { name: '工作流画布' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: '节点检查器' })).toBeInTheDocument();
     expect(screen.queryByText('传统流程')).not.toBeInTheDocument();
+  });
+
+  it('keeps inspector landmark and collapse control on a wide three-pane shell', async () => {
+    await renderReadyShell();
+    expect(screen.getByRole('button', { name: '收起检查器' })).toBeInTheDocument();
   });
 
   it('shows a selected task from the server workflow snapshot in the inspector', async () => {
@@ -94,5 +104,53 @@ describe('Xuanji 2.0 workspace shell', () => {
     expect(screen.getByText('运行中')).toBeInTheDocument();
     expect(screen.getByText('42%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '42');
+  });
+
+  it('maps light, dark, and system theme onto document data-theme', async () => {
+    await renderReadyShell();
+    expect(setThemePreference('light')).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(setThemePreference('dark')).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    const media = {
+      matches: true,
+      media: '(prefers-color-scheme: dark)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onchange: null,
+    };
+    window.matchMedia = vi.fn().mockReturnValue(media) as unknown as typeof window.matchMedia;
+    expect(applyTheme('system')).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('follows OS color scheme changes while preference is system', async () => {
+    await renderReadyShell();
+    const listeners: Array<(event: MediaQueryListEvent) => void> = [];
+    const media = {
+      matches: false,
+      media: '(prefers-color-scheme: dark)',
+      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        listeners.push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onchange: null,
+    };
+    window.matchMedia = vi.fn().mockReturnValue(media) as unknown as typeof window.matchMedia;
+    setThemePreference('system');
+    initTheme();
+    expect(document.documentElement.dataset.theme).toBe('light');
+    media.matches = true;
+    act(() => {
+      listeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent));
+    });
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 });

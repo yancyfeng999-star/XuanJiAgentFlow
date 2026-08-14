@@ -1,147 +1,4 @@
-:root {
-  /* 朱砂（主行动色） */
-  --primary: #B53A2C;
-  --primary-hover: #9A2F22;
-  --primary-light: #F9ECE6;
-
-  /* 星金（品牌点缀） */
-  --gold: #A8842C;
-  --gold-soft: #C9A75A;
-  --gold-deep: #7A5F18;
-  --gold-light: #F6EEDC;
-
-  /* 宣纸中性色 */
-  --bg: #F5F1E7;
-  --surface: #FDFBF4;
-  --border: #E2DAC5;
-  --border-light: #EDE7D6;
-  --text-primary: #242119;
-  --text-secondary: #6E6656;
-  --text-tertiary: #736A52;
-
-  /* 任务类型 */
-  --research: #366A50;
-  --research-bg: #EAF1EB;
-  --code: #3D5E80;
-  --code-bg: #EBF0F5;
-  --business: #A96F1F;
-  --business-bg: #F7EDDA;
-  --review: #75517E;
-  --review-bg: #F2ECF3;
-
-  /* 状态 */
-  --success: #366A50;
-  --success-bg: #EAF1EB;
-  --running: #3D5E80;
-  --running-bg: #EBF0F5;
-  --pending: #A79D89;
-  --pending-bg: #F0EBDC;
-  --failed: #B53A2C;
-  --failed-bg: #F9ECE6;
-  --paused: #A96F1F;
-  --paused-bg: #F7EDDA;
-
-  /* 玄色侧栏 */
-  --sidebar-bg: #171A21;
-  --sidebar-surface: #20242E;
-  --sidebar-border: #2A2F3B;
-  --sidebar-text: #A8A293;
-  --sidebar-active: rgba(201, 167, 90, 0.14);
-
-  /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-
-  /* 暖色阴影 */
-  --shadow-sm: 0 1px 2px rgba(58, 48, 32, 0.06);
-  --shadow-md: 0 4px 14px rgba(58, 48, 32, 0.08);
-  --shadow-lg: 0 14px 34px rgba(58, 48, 32, 0.14);
-
-  /* 语义表面 */
-  --input-bg: #FFFEFA;
-  --canvas-dot: #D9D0B8;
-  --canvas-edge: #C6B995;
-  --node-border: #DCD3BA;
-  --minimap-node: #E4DCC6;
-  --minimap-mask: rgba(23, 26, 33, 0.06);
-  --form-hint-text: #8A5A12;
-  --log-bg: #15181F;
-  --log-border: #262B36;
-  --log-text: #D8D2C0;
-  --log-muted: #6E6858;
-  --capsule-bg: #22262F;
-  --capsule-text: #C9A75A;
-
-  /* Font */
-  --font-display: 'Songti SC', 'STSong', 'Noto Serif SC', 'SimSun', serif;
-  --font-sans: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-/* ========== 玄夜（暗色） ========== */
-[data-theme='dark'] {
-  --primary: #CD4A38;
-  --primary-hover: #DA5B47;
-  --primary-light: rgba(205, 74, 56, 0.18);
-
-  --gold: #C9A75A;
-  --gold-soft: #D9BC7A;
-  --gold-deep: #D9BC7A;
-  --gold-light: rgba(201, 167, 90, 0.16);
-
-  --bg: #15171D;
-  --surface: #1D212A;
-  --border: #313743;
-  --border-light: #282E39;
-  --text-primary: #E9E4D5;
-  --text-secondary: #A29B89;
-  --text-tertiary: #857E6C;
-
-  --research: #6FA98A;
-  --research-bg: rgba(111, 169, 138, 0.16);
-  --code: #7FA3C7;
-  --code-bg: rgba(127, 163, 199, 0.16);
-  --business: #CE9B3F;
-  --business-bg: rgba(206, 155, 63, 0.16);
-  --review: #A884B0;
-  --review-bg: rgba(168, 132, 176, 0.16);
-
-  --success: #6FA98A;
-  --success-bg: rgba(111, 169, 138, 0.16);
-  --running: #7FA3C7;
-  --running-bg: rgba(127, 163, 199, 0.16);
-  --pending: #857E6C;
-  --pending-bg: rgba(133, 126, 108, 0.16);
-  --failed: #D96A55;
-  --failed-bg: rgba(217, 106, 85, 0.16);
-  --paused: #CE9B3F;
-  --paused-bg: rgba(206, 155, 63, 0.16);
-
-  --sidebar-bg: #10131A;
-  --sidebar-surface: #1A1F29;
-  --sidebar-border: #262C38;
-  --sidebar-text: #97917F;
-  --sidebar-active: rgba(201, 167, 90, 0.18);
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.36);
-  --shadow-lg: 0 14px 34px rgba(0, 0, 0, 0.48);
-
-  --input-bg: #232833;
-  --canvas-dot: #333A47;
-  --canvas-edge: #4A5160;
-  --node-border: #313743;
-  --minimap-node: #3A4250;
-  --minimap-mask: rgba(0, 0, 0, 0.32);
-  --form-hint-text: #D9BC7A;
-  --log-bg: #10131A;
-  --log-border: #262C38;
-  --log-text: #D8D2C0;
-  --log-muted: #6E6858;
-  --capsule-bg: #2A3039;
-  --capsule-text: #D9BC7A;
-}
+@import './tokens.css';
 
 * {
   margin: 0;
@@ -151,12 +8,50 @@
 
 body {
   font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
   background: var(--bg);
   color: var(--text-primary);
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: var(--text-control);
+  line-height: var(--line-control);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 #root {
@@ -184,8 +79,4 @@ body {
   background: var(--text-tertiary);
 }
 
-/* Focus ring */
-:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
+

@@ -1,0 +1,11 @@
+{
+  "version": "0.3.3",
+  "notes": "璇玑 0.3.3：设置页新增手动「检查更新」按钮（下载安装后可选择立即重启，运行中任务不中断）。",
+  "pub_date": "2026-08-11T13:14:08Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSR1FYR0tvOE1mM0xIWnRSQ0NEYUJja3pXRWdybEpKTWsyaWtqbkdYclB2a0JoQ2lSUXJyMk84T1U2WHdxdUQ3OStSb1pUZkVTNHU3UHhKd1J3Y0VsZTFNYkxNMHZ5ZUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NDU0MDQ4CWZpbGU6eHVhbmppLmFwcC50YXIuZ3oKUXVMc1NXOEVaZVFESThwaUVoT2svell5eEtrTEtjZEtyWjhKZXMzSklQb3hiV3BWc1MyMXBvUk1CNEI5TkNFU2NYMkpKSlpiWmJzSGU2a0lYbHh5Q1E9PQo=",
+      "url": "https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/download/v0.3.3/xuanji.app.tar.gz"
+    }
+  }
+}

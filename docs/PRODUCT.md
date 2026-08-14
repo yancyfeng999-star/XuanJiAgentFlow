@@ -1,7 +1,7 @@
 # 璇玑 App（桌面产品 · XuanJiAgentFlowApp）
 
 **共同 slogan：** 思考在先，执行在后  
-**本仓：** `/Users/yancyfeng/Desktop/XuanJiAgentFlow/XuanJiAgentFlowApp`  
+**本仓：** `/Users/yancyfeng/Desktop/Mac Dpxx项目/自研软件/XuanJiAgentFlow`  
 **历史工程名：** AgentFlow
 
 ---
@@ -25,7 +25,7 @@
 | 步骤 | 你做什么 | 系统做什么 |
 |------|----------|------------|
 | 安装 | DMG → 拖到「应用程序」 | 当前 ad-hoc 签名，可能要「仍要打开」 |
-| 配置 | 设置里填 Planner Key；登记 Hermes 节点 / SSH | 密钥本地 `0600`，API 不回传 |
+| 配置 | 「思考模型」里填接口密钥；登记 Hermes 节点 / SSH | 密钥本地 `0600`，API 不回传 |
 | 建项 | 左侧新项目 | 项目目录 + SQLite 元数据 |
 | 规划 | 画布输入目标 → 生成规划 | DeepSeek / MiMo 等出 DAG（可一次自动修） |
 | 编辑 | 点节点改 Prompt / 约束 / 重试；拖位置 | 审核前可改，审核后冻结 |
@@ -51,7 +51,7 @@
 | 项 | 状态 |
 |----|------|
 | 版本方向 | **3.0**（完成 2.0 承诺的真执行闭环，**不扩**产品范围） |
-| 安装包示例 | `璇玑_0.3.0_aarch64.dmg`（arm64） |
+| 安装包示例 | `璇玑_0.3.3_aarch64.dmg`（arm64） |
 | 签名 | 本机 ad-hoc；**未** Apple 公证 / Staple |
 | 分发 | **未** App Store；**未** Win / Linux 首发 |
 | 外部验收 | 真实云账号长压、真实服务器 Hermes 长稳等属外部验收 |

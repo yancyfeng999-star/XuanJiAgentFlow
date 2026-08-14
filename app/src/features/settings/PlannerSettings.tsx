@@ -11,6 +11,8 @@ export default function PlannerSettings() {
   const planner = useWorkspaceStore((state) => state.plannerConfig);
   const loadSettings = useWorkspaceStore((state) => state.loadSettings);
   const savePlannerConfig = useWorkspaceStore((state) => state.savePlannerConfig);
+  const saving = useWorkspaceStore((state) =>
+    state.pendingActions.some((action) => action.kind === 'save_planner'));
   const [plannerBaseUrl, setPlannerBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -85,7 +87,9 @@ export default function PlannerSettings() {
         <label htmlFor="planner-api-key">{t('planner.apiKey')}</label><input id="planner-api-key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" />
         {planner.credential_configured === true && <p className="configured">{t('planner.keyConfigured')}</p>}
         {plannerHint && <p className="configured" role="status">{plannerHint}</p>}
-        <button type="submit" className="form-primary">{t('planner.save')}</button>
+        <button type="submit" className="form-primary" disabled={saving}>
+          {saving ? t('planner.saving') : t('planner.save')}
+        </button>
       </form>
       <div className="settings-card form-grid">
         <h2><Languages size={18} />{t('settings.interface')}</h2>

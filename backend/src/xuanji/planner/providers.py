@@ -37,10 +37,10 @@ class OpenAIChatCompletionsProvider:
         self._transport = transport
         self._timeout = timeout
 
-    async def complete(self, messages: list[dict[str, str]], model: str) -> str:
+    async def complete(self, messages: list[dict[str, str]], model: str, *, reasoning_effort: str | None = None) -> str:
         api_key = self._credentials.get(self._credential_key)
         if not api_key:
-            raise PlannerError("planner_credentials_missing", "规划器接口密钥尚未配置")
+            raise PlannerError("planner_credentials_missing", "思考模型接口密钥尚未配置")
 
         request = {
             "headers": {
@@ -63,21 +63,21 @@ class OpenAIChatCompletionsProvider:
                 ) as client:
                     response = await client.post(self._url, **request)
         except httpx.TimeoutException:
-            raise PlannerError("planner_timeout", "规划器服务请求超时") from None
+            raise PlannerError("planner_timeout", "思考模型服务请求超时") from None
         except httpx.RequestError:
-            raise PlannerError("planner_provider_error", "规划器服务请求失败") from None
+            raise PlannerError("planner_provider_error", "思考模型服务请求失败") from None
 
         if response.status_code == 401:
             raise PlannerError(
                 "planner_unauthorized",
-                "规划器身份验证失败，请检查接口密钥",
+                "思考模型身份验证失败，请检查接口密钥",
             )
         try:
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
-                raise TypeError("规划器返回内容必须是文本")
+                raise TypeError("思考模型返回内容必须是文本")
             return content
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-            raise PlannerError("planner_provider_error", "规划器服务请求失败") from None
+            raise PlannerError("planner_provider_error", "思考模型服务请求失败") from None

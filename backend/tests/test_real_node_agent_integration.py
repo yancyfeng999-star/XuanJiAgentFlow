@@ -155,3 +155,75 @@ async def test_coordinator_real_node_agent_fake_hermes_transfers_dependency_cont
         ).read_text(encoding="utf-8")
         assert "input_uploaded" in log_lines
         assert "task_succeeded" in log_lines
+
+
+@pytest.mark.asyncio
+async def test_manual_verify_propagates_needs_review_to_run(tmp_path: Path) -> None:
+    token = "real-agent-test-token"
+    node_app = create_node_agent_app(
+        root=tmp_path / "node-tasks",
+        token=token,
+        hermes_url="http://fake-hermes",
+    )
+    node_app.state.executor.client = FakeHermes()
+
+    async with AsyncExitStack() as stack:
+        transport_client = await stack.enter_async_context(
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=node_app),
+                base_url="http://real-node-agent.test",
+            )
+        )
+        node_client = NodeClient("http://real-node-agent.test", token, client=transport_client)
+        database = Database(tmp_path / "coordinator.db")
+        migrate(database)
+        stack.callback(database.close)
+        artifacts = ArtifactManager(tmp_path / "managed-projects")
+        project = Project(id="project-verify", name="Verify", root_path=str(tmp_path / "project"))
+        ProjectRepository(database).create(project)
+        artifacts.create_project(project)
+        workflow = Workflow(
+            id="workflow-verify",
+            project_id=project.id,
+            version=1,
+            goal="Prove manual verify semantics",
+            status=WorkflowStatus.REVIEWED,
+            tasks=[
+                Task(
+                    id="report",
+                    workflow_id="workflow-verify",
+                    title="Report",
+                    prompt="Write a report.",
+                    expected_outputs=[ExpectedOutput(path="report.md")],
+                    verify=[{"kind": "manual", "value": "人工确认报告质量"}],
+                ),
+            ],
+        )
+        WorkflowRepository(database).save(workflow)
+        run = Run(id="run-verify", workflow_id=workflow.id)
+        runs = RunRepository(database)
+        runs.create(run)
+        artifacts.create_run(project.id, run.id, workflow.id)
+        NodeRepository(database).upsert(
+            HermesNode(
+                id="real-agent",
+                name="Real Node Agent",
+                kind=NodeKind.LOCAL,
+                api_url="http://real-node-agent.test",
+                status=NodeStatus.ONLINE,
+                capabilities_json={"models": ["fake-hermes"], "tools": ["terminal"]},
+            )
+        )
+        manager = ExecutionManager(database, artifacts, {"real-agent": node_client}, poll_interval=60)
+        stack.push_async_callback(manager.close)
+
+        await manager.start(run.id)
+        await manager.reconcile(run.id)
+        await manager.reconcile(run.id)
+
+        attempt = runs.latest_attempts(run.id)["report"]
+        assert attempt.status.value == "needs_review"
+        assert runs.get(run.id).status is RunStatus.SUCCESS_WITH_WARNINGS
+
+        payload_run = runs.get(run.id)
+        assert payload_run.completed_at is not None

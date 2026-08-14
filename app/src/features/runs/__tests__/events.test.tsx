@@ -40,6 +40,7 @@ const workflow: Workflow = {
   planner_model: null,
   status: 'reviewed',
   graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [{
     id: 'research',
@@ -54,7 +55,7 @@ const workflow: Workflow = {
       required_tags: [], timeout_seconds: 1800,
     },
     retry_policy: { max_attempts: 3, delay_seconds: 1 },
-    expected_outputs: [{ path: 'research.md', media_type: 'text/markdown' }],
+    expected_outputs: [{ path: 'research.md', media_type: 'text/markdown' }], writes: [], done_definition: [], verify: [], run_gate: 'auto',
     ui_position: { x: 100, y: 100 },
   }],
 };
@@ -70,6 +71,7 @@ const attempt: TaskAttempt = {
   completed_at: null,
   error: null,
   result_manifest: null,
+  allowed_actions: ['retry', 'skip'],
 };
 
 const run: Run = {
@@ -80,6 +82,7 @@ const run: Run = {
   completed_at: null,
   created_at: '2026-07-28T00:00:00Z',
   attempts: [attempt],
+  allowed_actions: ['pause', 'cancel'],
 };
 
 const artifact: Artifact = {
@@ -161,6 +164,7 @@ const client = {
   createProject: vi.fn(),
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
+  listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
   plan: vi.fn(),
   getWorkflow: vi.fn().mockResolvedValue(workflow),
   updateWorkflow: vi.fn(),
@@ -169,9 +173,9 @@ const client = {
   createRun: vi.fn().mockResolvedValue(run),
   startRun: vi.fn().mockResolvedValue({ id: 'run-1', status: 'accepted' }),
   getRun: vi.fn().mockResolvedValue(run),
-  pauseRun: vi.fn().mockResolvedValue({ ...run, status: 'paused' }),
-  resumeRun: vi.fn().mockResolvedValue({ ...run, status: 'running' }),
-  cancelRun: vi.fn().mockResolvedValue({ ...run, status: 'cancelled' }),
+  pauseRun: vi.fn().mockResolvedValue({ ...run, status: 'paused', allowed_actions: ['resume', 'cancel'] }),
+  resumeRun: vi.fn().mockResolvedValue({ ...run, status: 'running', allowed_actions: ['pause', 'cancel'] }),
+  cancelRun: vi.fn().mockResolvedValue({ ...run, status: 'cancelled', allowed_actions: [] }),
   retryTask: vi.fn().mockResolvedValue({ ...attempt, attempt: 2, status: 'ready' }),
   skipTask: vi.fn().mockResolvedValue({ ...run, status: 'running' }),
   listArtifacts: vi.fn().mockResolvedValue({ artifacts: [artifact] }),
@@ -215,7 +219,7 @@ function seedWorkspace() {
     selectedTaskId: 'research',
     canExecute: true,
     error: null,
-    loading: false,
+    pendingActions: [],
   });
 }
 
@@ -229,9 +233,9 @@ beforeEach(() => {
     next_offset: 2,
     events: [{ message: 'line-0' }, { message: 'line-1' }],
   });
-  vi.mocked(client.pauseRun).mockResolvedValue({ ...run, status: 'paused' });
-  vi.mocked(client.resumeRun).mockResolvedValue({ ...run, status: 'running' });
-  vi.mocked(client.cancelRun).mockResolvedValue({ ...run, status: 'cancelled' });
+  vi.mocked(client.pauseRun).mockResolvedValue({ ...run, status: 'paused', allowed_actions: ['resume', 'cancel'] });
+  vi.mocked(client.resumeRun).mockResolvedValue({ ...run, status: 'running', allowed_actions: ['pause', 'cancel'] });
+  vi.mocked(client.cancelRun).mockResolvedValue({ ...run, status: 'cancelled', allowed_actions: [] });
   vi.mocked(client.retryTask).mockResolvedValue({ ...attempt, attempt: 2, status: 'ready' });
   vi.mocked(client.skipTask).mockResolvedValue({ ...run, status: 'running' });
   vi.mocked(client.getRun).mockResolvedValue(run);

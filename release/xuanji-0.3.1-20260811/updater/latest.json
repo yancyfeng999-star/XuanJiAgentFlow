@@ -1,0 +1,11 @@
+{
+  "version": "0.3.1",
+  "notes": "璇玑 0.3.1：全新宣纸-玄色视觉系统、深色/浅色模式、中英文界面、静默自动更新。",
+  "pub_date": "2026-08-11T03:32:57Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSR1FYR0tvOE1mM0V2UURIVDdRVXVKZHgxVEQ3WE9oNUpOMlN1WXpySGpZeGFneUtJSU95K1J1TlRhTDZQaExGR290T1Y4OG9GSTJZZFgvaVVzOVptUFNVUGdWR0lLcWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NDE5MDY0CWZpbGU655KH546RLmFwcC50YXIuZ3oKTElGdzY0ankrUDhraTZGQnl3R0IxMjg4YVFZcFBDSnhJNnJpbFRzNnU2ckorNnM4cEpsTy9uaE5nUVgxd3l0ZVNnK24rcmRxa3o4U0pHM2RUQW1KQUE9PQo=",
+      "url": "https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/download/v0.3.1/xuanji.app.tar.gz"
+    }
+  }
+}

@@ -3,10 +3,10 @@
 ## 正式位置
 
 ```text
-/Users/yancyfeng/Desktop/XuanJiAgentFlow/XuanJiAgentFlowApp
+/Users/yancyfeng/Desktop/Mac Dpxx项目/自研软件/XuanJiAgentFlow
 ```
 
-上级：`/Users/yancyfeng/Desktop/XuanJiAgentFlow/`  
+上级：`/Users/yancyfeng/Desktop/Mac Dpxx项目/自研软件/`  
 兄弟：`../XuanJiAgentFlowSkill/`
 
 ## 正误对照
@@ -15,11 +15,11 @@
 |------|------|-------------|
 | 品牌中文 | 璇玑 | 璇机、玄玑 |
 | 桌面产品 | 璇玑 App / XuanJiAgentFlowApp | 对外只说 AgentFlow |
-| 本仓路径 | Desktop/XuanJiAgentFlow/XuanJiAgentFlowApp | Agent Data/.../projects 下的临时夹 |
+| 本仓路径 | Desktop/Mac Dpxx项目/自研软件/XuanJiAgentFlow | Agent Data/.../projects 下的临时夹 |
 | 对话产品 | XuanJiAgentFlowSkill | 与 App 目录名混用 |
 | 组合 Skill 名 | XuanJiAgentFlow | 写成 App 名 |
 | Slogan | 思考在先，执行在后 | — |
-| 包名示例 | `璇玑_0.3.0_aarch64.dmg` | 编造版本 |
+| 包名示例 | `璇玑_0.3.3_aarch64.dmg` | 编造版本 |
 | 产品方向 | 3.0 = 真执行闭环 | 说成已公证上架 |
 
 ## 废弃 / 勿再写入

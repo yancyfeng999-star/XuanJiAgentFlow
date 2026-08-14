@@ -5,12 +5,27 @@ import uuid
 
 from fastapi import APIRouter, Query, Request, status
 
-from xuanji.domain.enums import WorkflowStatus
+from xuanji.domain.enums import RunStatus, WorkflowStatus
 from xuanji.domain.models import Run
+from xuanji.run_actions import run_allowed_actions, task_allowed_actions
 
 from .errors import APIError
 
 router = APIRouter(tags=["runs"])
+
+
+async def _require_ready(request: Request, project_id: str, workflow_id: str) -> None:
+    services = _services(request)
+    if services.readiness is None:
+        return
+    result = await services.readiness.check(project_id=project_id, workflow_id=workflow_id)
+    if not result["ready"]:
+        raise APIError(
+            409,
+            "run_not_ready",
+            "执行条件未满足，请先处理阻塞项",
+            {"issues": result["issues"], "checks": result["checks"]},
+        )
 
 
 def _services(request: Request):
@@ -25,11 +40,23 @@ def _run(request: Request, run_id: str) -> Run:
 
 
 def _run_payload(request: Request, run: Run) -> dict:
+    services = _services(request)
     payload = run.model_dump(mode="json")
-    payload["attempts"] = [
-        attempt.model_dump(mode="json")
-        for attempt in _services(request).runs.list_attempts(run.id)
-    ]
+    workflow = services.workflows.get(run.workflow_id)
+    latest = services.runs.latest_attempts(run.id)
+    attempts = []
+    for attempt in services.runs.list_attempts(run.id):
+        attempt_payload = attempt.model_dump(mode="json")
+        task = next((item for item in (workflow.tasks if workflow else []) if item.id == attempt.task_id), None)
+        attempt_payload["allowed_actions"] = (
+            task_allowed_actions(run, task, latest.get(attempt.task_id)) if task else []
+        )
+        attempts.append(attempt_payload)
+    payload["attempts"] = attempts
+    payload["allowed_actions"] = run_allowed_actions(run)
+    if workflow is not None:
+        payload["workflow_version"] = workflow.version
+        payload["review_snapshot_hash"] = workflow.review_snapshot_hash
     return payload
 
 
@@ -48,6 +75,7 @@ async def create_run(workflow_id: str, request: Request) -> dict:
         raise APIError(404, "workflow_not_found", "工作流不存在", {"workflow_id": workflow_id})
     if workflow.status is not WorkflowStatus.REVIEWED:
         raise APIError(409, "workflow_not_reviewed", "工作流必须先审核，才能开始执行")
+    await _require_ready(request, workflow.project_id, workflow.id)
     run = Run(id=f"run-{uuid.uuid4().hex[:12]}", workflow_id=workflow.id)
     services.runs.create(run)
     services.artifacts.create_run(workflow.project_id, run.id, workflow.id)
@@ -59,6 +87,40 @@ async def create_run(workflow_id: str, request: Request) -> dict:
     return _run_payload(request, run)
 
 
+@router.get("/api/projects/{project_id}/runs")
+async def list_project_runs(
+    project_id: str,
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None),
+) -> dict:
+    services = _services(request)
+    if services.projects.get(project_id) is None:
+        raise APIError(404, "project_not_found", "项目不存在", {"project_id": project_id})
+    runs, next_cursor = services.runs.list_for_project(project_id, limit=limit, cursor=cursor)
+    summaries = []
+    for run in runs:
+        workflow = services.workflows.get(run.workflow_id)
+        latest = services.runs.latest_attempts(run.id)
+        status_counts: dict[str, int] = {}
+        for attempt in latest.values():
+            status_counts[attempt.status.value] = status_counts.get(attempt.status.value, 0) + 1
+        summaries.append({
+            "id": run.id,
+            "workflow_id": run.workflow_id,
+            "workflow_version": workflow.version if workflow else None,
+            "review_snapshot_hash": workflow.review_snapshot_hash if workflow else None,
+            "status": run.status.value,
+            "created_at": run.created_at.isoformat(),
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "allowed_actions": run_allowed_actions(run),
+            "task_count": len(workflow.tasks) if workflow else 0,
+            "task_status_counts": status_counts,
+        })
+    return {"runs": summaries, "next_cursor": next_cursor}
+
+
 @router.get("/api/runs/{run_id}")
 async def get_run(run_id: str, request: Request) -> dict:
     return _run_payload(request, _run(request, run_id))
@@ -66,7 +128,9 @@ async def get_run(run_id: str, request: Request) -> dict:
 
 @router.post("/api/runs/{run_id}/start", status_code=status.HTTP_202_ACCEPTED)
 async def start_run(run_id: str, request: Request) -> dict:
-    _run(request, run_id)
+    run = _run(request, run_id)
+    workflow = _workflow_for_run(request, run)
+    await _require_ready(request, workflow.project_id, workflow.id)
     services = _services(request)
     services.spawn_run_task(run_id, "start", services.execution.start(run_id))
     return {"id": run_id, "status": "accepted"}

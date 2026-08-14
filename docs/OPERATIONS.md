@@ -6,7 +6,7 @@
 
 ## 1. 从 DMG 安装
 
-1. 打开 `release/` 当前交付目录下的 `璇玑_0.3.0_aarch64.dmg`（见 `release/README.md`）。  
+1. 打开 `release/` 当前交付目录下的 `璇玑_0.3.3_aarch64.dmg`（见 `release/README.md`）。  
 2. 将「璇玑.app」拖到 `Applications`。  
 3. 若拦截：**系统设置 → 隐私与安全性 → 仍要打开**。  
 4. 节点与 Key 全部在界面配置，不必写进安装包。

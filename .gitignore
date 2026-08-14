@@ -26,6 +26,7 @@ playwright/.cache/
 
 # Rust / Tauri
 app/src-tauri/target/
+app/src-tauri/src-tauri/target-fresh/
 
 # IDE / OS
 .DS_Store

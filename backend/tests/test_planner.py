@@ -224,7 +224,7 @@ async def test_planner_stops_after_one_failed_repair_with_stable_error(tmp_path)
         await service.plan("project_1", "Build report", "", {})
 
     assert exc_info.value.code == "planner_invalid_output"
-    assert str(exc_info.value) == "规划器返回的工作流格式无效，自动修复后仍未通过校验"
+    assert str(exc_info.value) == "思考模型返回的工作流格式无效，自动修复后仍未通过校验"
     assert call_count == 2
 
 
@@ -246,7 +246,7 @@ async def test_openai_provider_maps_unauthorized_without_leaking_credentials(tmp
         await provider.complete([], "deepseek-chat")
 
     assert exc_info.value.code == "planner_unauthorized"
-    assert str(exc_info.value) == "规划器身份验证失败，请检查接口密钥"
+    assert str(exc_info.value) == "思考模型身份验证失败，请检查接口密钥"
     assert "vault-only-secret" not in str(exc_info.value)
     assert "vault-only-secret" not in caplog.text
     assert (tmp_path / "credentials.json").stat().st_mode & 0o777 == 0o600
@@ -270,7 +270,7 @@ async def test_openai_provider_maps_timeout_to_stable_error(tmp_path):
         await provider.complete([], "deepseek-chat")
 
     assert exc_info.value.code == "planner_timeout"
-    assert str(exc_info.value) == "规划器服务请求超时"
+    assert str(exc_info.value) == "思考模型服务请求超时"
     assert "vault-only-secret" not in str(exc_info.value)
 
 
@@ -320,3 +320,35 @@ async def test_openai_provider_rejects_non_string_content(tmp_path):
 
 def test_planner_provider_protocol_describes_complete_interface():
     assert callable(getattr(PlannerProvider, "complete", None))
+
+
+def test_planner_schema_includes_delivery_contract() -> None:
+    from xuanji.domain.models import Workflow
+
+    schema = Workflow.model_json_schema()
+    task_schema = schema["$defs"]["Task"]["properties"]
+    assert "writes" in task_schema
+    assert "done_definition" in task_schema
+    assert "verify" in task_schema
+    assert "run_gate" in task_schema
+    verify_step = schema["$defs"]["VerifyStep"]["properties"]
+    assert verify_step["kind"]["enum"] == ["command", "file_exists", "sha256", "manual"]
+
+
+def test_workflow_validates_delivery_contract_fields() -> None:
+    from xuanji.domain.models import Task, VerifyStep, Workflow
+
+    workflow = Workflow(
+        id="wf", project_id="p", version=1, goal="g",
+        tasks=[Task(
+            id="t1", workflow_id="wf", title="T",
+            writes=["out/report.md"],
+            done_definition=["报告包含结论"],
+            verify=[VerifyStep(kind="file_exists", value="out/report.md")],
+            run_gate="review_before_complete",
+        )],
+    )
+    dumped = workflow.model_dump(mode="json")
+    restored = Workflow.model_validate(dumped)
+    assert restored.tasks[0].verify[0].kind == "file_exists"
+    assert restored.tasks[0].run_gate == "review_before_complete"

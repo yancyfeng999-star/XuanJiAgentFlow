@@ -1,77 +1,219 @@
-/**
- * 静默自动更新：启动后后台检查 GitHub Releases 最新版本，
- * 有更新则下载、安装并重启；任何失败（离线、无新版本、未打包环境）都静默忽略。
- * 用户在设置页关闭后不再检查；存在进行中的运行时不重启（更新在下次启动生效）。
- */
+export type UpdateCandidate = {
+  version: string;
+  notes?: string;
+  date?: string;
+  bytes?: number | null;
+  minOs?: string | null;
+};
 
-import { useWorkspaceStore } from '../store/workspaceStore';
+export type UpdateState =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'up_to_date'; checkedAt: string }
+  | { kind: 'available'; candidate: UpdateCandidate }
+  | { kind: 'downloading'; candidate: UpdateCandidate; progress: number | null }
+  | { kind: 'verifying'; candidate: UpdateCandidate }
+  | { kind: 'ready_to_install'; candidate: UpdateCandidate }
+  | { kind: 'installing'; candidate: UpdateCandidate }
+  | { kind: 'restart_required'; candidate: UpdateCandidate }
+  | { kind: 'failed'; stage: string; code: string; message: string; retryable: boolean }
+  | { kind: 'desktop_only' };
 
-const STORAGE_KEY = 'xuanji.updater.enabled';
+export interface UpdaterAdapter {
+  available: boolean;
+  check(): Promise<UpdateCandidate | null>;
+  download(candidate: UpdateCandidate, onProgress: (progress: number | null) => void): Promise<void>;
+  install(candidate: UpdateCandidate): Promise<void>;
+}
+
+export interface UpdateService {
+  getState(): UpdateState;
+  subscribe(listener: (state: UpdateState) => void): () => void;
+  check(): Promise<void>;
+  download(): Promise<void>;
+  installAndRestart(): Promise<void>;
+  reset(): void;
+}
+
+function createDefaultService(adapter: UpdaterAdapter): UpdateService {
+  let state: UpdateState = { kind: 'idle' };
+  const listeners = new Set<(next: UpdateState) => void>();
+  let inflight: Promise<void> | null = null;
+
+  const setState = (next: UpdateState) => {
+    state = next;
+    listeners.forEach((listener) => listener(next));
+  };
+
+  const run = (task: () => Promise<void>): Promise<void> => {
+    if (inflight) return inflight;
+    inflight = task().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
+
+  return {
+    getState: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(state);
+      return () => listeners.delete(listener);
+    },
+    reset() {
+      setState({ kind: 'idle' });
+    },
+    check() {
+      return run(async () => {
+        if (!adapter.available) {
+          setState({ kind: 'desktop_only' });
+          return;
+        }
+        setState({ kind: 'checking' });
+        try {
+          const candidate = await adapter.check();
+          if (!candidate) {
+            setState({ kind: 'up_to_date', checkedAt: new Date().toISOString() });
+            return;
+          }
+          setState({ kind: 'available', candidate });
+        } catch (error) {
+          setState(fail('check', error));
+        }
+      });
+    },
+    download() {
+      return run(async () => {
+        const current = state;
+        if (current.kind !== 'available' && current.kind !== 'failed') return;
+        const candidate = 'candidate' in current && current.candidate ? current.candidate : null;
+        if (!candidate) return;
+        setState({ kind: 'downloading', candidate, progress: 0 });
+        try {
+          await adapter.download(candidate, (progress) => {
+            if (state.kind === 'downloading') {
+              setState({ kind: 'downloading', candidate, progress });
+            }
+          });
+          setState({ kind: 'verifying', candidate });
+          setState({ kind: 'ready_to_install', candidate });
+        } catch (error) {
+          setState(fail('download', error));
+        }
+      });
+    },
+    installAndRestart() {
+      return run(async () => {
+        if (state.kind !== 'ready_to_install') return;
+        const { candidate } = state;
+        setState({ kind: 'installing', candidate });
+        try {
+          await adapter.install(candidate);
+          setState({ kind: 'restart_required', candidate });
+        } catch (error) {
+          setState(fail('install', error));
+        }
+      });
+    },
+  };
+}
+
+function fail(stage: string, error: unknown): UpdateState {
+  const message = error instanceof Error ? error.message : String(error);
+  return { kind: 'failed', stage, code: `${stage}_failed`, message, retryable: true };
+}
+
+export function createUpdateService(adapter: UpdaterAdapter): UpdateService {
+  return createDefaultService(adapter);
+}
+
+export function browserUpdaterAdapter(): UpdaterAdapter {
+  return {
+    available: false,
+    async check() {
+      return null;
+    },
+    async download() {},
+    async install() {},
+  };
+}
+
+export function createTauriUpdaterAdapter(): UpdaterAdapter {
+  return {
+    available: typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window,
+    async check() {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (!update) return null;
+      return { version: update.version, notes: update.body ?? undefined, date: update.date ?? undefined, bytes: null };
+    },
+    async download(candidate, onProgress) {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (!update || update.version !== candidate.version) throw new Error('update_changed');
+      await update.download((event) => {
+        if (event.event === 'Progress') {
+          const data = event.data as { chunkLength: number; contentLength?: number };
+          onProgress(data.contentLength ? data.chunkLength / data.contentLength : null);
+        }
+      });
+    },
+    async install() {
+      const { check } = await import('@tauri-apps/plugin-updater');
+      const update = await check();
+      if (!update) throw new Error('update_missing');
+      await update.install();
+    },
+  };
+}
+
+let shared: UpdateService | null = null;
+
+export async function bindNativeUpdateMenu(options: {
+  listen: (event: string, handler: () => void) => Promise<() => void>;
+  check: () => Promise<void>;
+  openUpdates: () => void;
+}): Promise<() => void> {
+  return options.listen('xuanji://check-for-updates', () => {
+    options.openUpdates();
+    void options.check();
+  });
+}
+
+export function getUpdateService(): UpdateService {
+  if (!shared) {
+    const adapter = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+      ? createTauriUpdaterAdapter()
+      : browserUpdaterAdapter();
+    shared = createUpdateService(adapter);
+  }
+  return shared;
+}
+
+export function setUpdateServiceForTests(service: UpdateService): void {
+  shared = service;
+}
 
 export function isAutoUpdateEnabled(): boolean {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) !== 'off';
-  } catch {
-    return true;
-  }
+  return false;
 }
 
-export function setAutoUpdateEnabled(enabled: boolean): void {
-  try {
-    if (enabled) {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(STORAGE_KEY, 'off');
-    }
-  } catch {
-    /* 忽略持久化失败 */
-  }
+export function setAutoUpdateEnabled(_enabled: boolean): void {
+  /* P1: no silent auto-install */
 }
 
-const ACTIVE_RUN_STATUSES = new Set(['accepted', 'pending', 'running', 'paused', 'cancelling']);
-
-function hasActiveRun(): boolean {
-  const state = useWorkspaceStore.getState();
-  const status = state.run?.status ?? state.runStatus;
-  return ACTIVE_RUN_STATUSES.has(status);
-}
-
+/** Launch must not download or install. */
 export async function runSilentUpdate(): Promise<void> {
-  if (!('__TAURI_INTERNALS__' in window)) return;
-  if (!isAutoUpdateEnabled()) return;
-  try {
-    const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
-    if (!update) return;
-    await update.downloadAndInstall();
-    if (hasActiveRun()) return;
-    const { relaunch } = await import('@tauri-apps/plugin-process');
-    await relaunch();
-  } catch {
-    /* 静默失败：保持当前版本运行 */
-  }
+  return undefined;
 }
 
-export type ManualUpdateResult =
-  | { kind: 'up-to-date' }
-  | { kind: 'installed'; version: string; relaunchBlocked: boolean }
-  | { kind: 'error' };
-
-/**
- * 手动检查更新：检查 → 有则下载安装 → 返回结果供界面提示。
- * 不自动重启；运行中有任务时标记 relaunchBlocked，由下次启动生效。
- */
-export async function checkForUpdateManually(): Promise<ManualUpdateResult> {
-  if (!('__TAURI_INTERNALS__' in window)) return { kind: 'error' };
-  try {
-    const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
-    if (!update) return { kind: 'up-to-date' };
-    await update.downloadAndInstall();
-    return { kind: 'installed', version: update.version, relaunchBlocked: hasActiveRun() };
-  } catch {
-    return { kind: 'error' };
-  }
+export async function checkForUpdateManually(): Promise<{ kind: 'up-to-date' } | { kind: 'installed'; version: string; relaunchBlocked: boolean } | { kind: 'error' }> {
+  const service = getUpdateService();
+  await service.check();
+  const state = service.getState();
+  if (state.kind === 'up_to_date') return { kind: 'up-to-date' };
+  if (state.kind === 'available') return { kind: 'error' };
+  return { kind: 'error' };
 }
 
 export async function relaunchApp(): Promise<void> {
@@ -80,6 +222,6 @@ export async function relaunchApp(): Promise<void> {
     const { relaunch } = await import('@tauri-apps/plugin-process');
     await relaunch();
   } catch {
-    /* 重启失败时静默 */
+    /* ignore */
   }
 }

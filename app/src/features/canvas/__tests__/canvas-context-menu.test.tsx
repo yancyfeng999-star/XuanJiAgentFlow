@@ -89,7 +89,7 @@ const baseTask: Workflow['tasks'][number] = {
     timeout_seconds: 1800,
   },
   retry_policy: { max_attempts: 3, delay_seconds: 1 },
-  expected_outputs: [{ path: 'research.md', media_type: null }],
+  expected_outputs: [{ path: 'research.md', media_type: null }], writes: [], done_definition: [], verify: [], run_gate: 'auto',
   ui_position: { x: 100, y: 100 },
 };
 
@@ -102,6 +102,7 @@ const workflow: Workflow = {
   planner_model: null,
   status: 'draft',
   graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [
     baseTask,

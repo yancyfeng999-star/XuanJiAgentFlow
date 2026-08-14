@@ -11,17 +11,18 @@ const project: Project = {
 const workflow: Workflow = {
   id: 'workflow-1', project_id: 'project-1', version: 1, goal: 'Build report',
   planner_provider: null, planner_model: null, status: 'draft', graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [
     {
       id: 'research', workflow_id: 'workflow-1', title: 'Research', description: '', prompt: '', agent_type: 'research', dependencies: [],
       execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: [], timeout_seconds: 1800 },
-      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], ui_position: { x: 100, y: 100 },
+      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'research.md', media_type: null }], writes: [], done_definition: [], verify: [], run_gate: 'auto', ui_position: { x: 100, y: 100 },
     },
     {
       id: 'write', workflow_id: 'workflow-1', title: 'Write', description: '', prompt: '', agent_type: 'business', dependencies: ['research'],
       execution_policy: { mode: 'auto', node_id: null, node_group: null, required_models: [], required_tools: [], required_tags: [], timeout_seconds: 1800 },
-      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'report.md', media_type: null }], ui_position: { x: 440, y: 100 },
+      retry_policy: { max_attempts: 3, delay_seconds: 1 }, expected_outputs: [{ path: 'report.md', media_type: null }], writes: [], done_definition: [], verify: [], run_gate: 'auto', ui_position: { x: 440, y: 100 },
     },
   ],
 };
@@ -36,6 +37,7 @@ const makeClient = () => ({
   listProjects: vi.fn().mockResolvedValue([project]),
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
+  listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
   getWorkflow: vi.fn().mockResolvedValue(workflow),
   plan: vi.fn().mockResolvedValue(workflow),
   updateWorkflow: vi.fn().mockImplementation(async (_id, payload) => ({ ...workflow, ...payload })),
@@ -44,6 +46,8 @@ const makeClient = () => ({
   createRun: vi.fn(), startRun: vi.fn(),
   listNodes: vi.fn().mockResolvedValue([]), createNode: vi.fn(), updateNode: vi.fn(), deleteNode: vi.fn(), diagnoseNode: vi.fn(), provisionNode: vi.fn(),
   getPlannerConfig: vi.fn().mockResolvedValue({ base_url: null, model: null, credential_key: null, credential_configured: false }), setPlannerConfig: vi.fn(),
+  listThinkingModels: vi.fn().mockResolvedValue({ items: [] }),
+  createThinkingModel: vi.fn(), updateThinkingModel: vi.fn(), deleteThinkingModel: vi.fn(), setDefaultThinkingModel: vi.fn(),
 }) as unknown as CoordinatorClient;
 
 describe('workspace store', () => {
@@ -266,7 +270,7 @@ describe('workspace store', () => {
 
     expect(store.getState().hermesNodes).toEqual([]);
     expect(store.getState().selectedTaskId).toBeNull();
-    expect(store.getState().loading).toBe(false);
+    expect(store.getState().pendingActions).toEqual([]);
   });
 
   it('reports failed node provisioning without treating HTTP 200 as success', async () => {
@@ -403,11 +407,73 @@ describe('workspace store', () => {
     await store.getState().plan({ goal: 'Build report' });
 
     expect(store.getState().canExecute).toBe(false);
-    await store.getState().reviewWorkflow();
+    await store.getState().reviewWorkflow('a'.repeat(64), []);
     expect(store.getState().canExecute).toBe(true);
 
     await store.getState().updateTask('research', { title: 'Blocked edit' });
     expect(store.getState().workflow?.tasks[0].title).toBe('Research');
     expect(store.getState().error).toMatchObject({ code: 'workflow_frozen' });
+  });
+
+  it('rejects self-dependencies, unknown tasks, and cycles when editing dependencies', async () => {
+    const store = createWorkspaceStore(() => client);
+    await store.getState().loadProject('project-1');
+    await store.getState().setTaskDependencies('research', ['research']);
+    expect(store.getState().error).toMatchObject({ code: 'workflow_cycle' });
+    await store.getState().setTaskDependencies('research', ['missing']);
+    expect(store.getState().error).toMatchObject({ code: 'workflow_cycle' });
+    await store.getState().setTaskDependencies('research', ['write']);
+    expect(store.getState().error).toMatchObject({ code: 'workflow_cycle' });
+    expect(client.updateWorkflow).not.toHaveBeenCalled();
+    await store.getState().setTaskDependencies('write', ['research']);
+    expect(client.updateWorkflow).toHaveBeenCalled();
+  });
+});
+
+describe('action-level pending', () => {
+  it('blocks duplicate in-flight actions without locking unrelated actions', async () => {
+    const client = makeClient();
+    const gate = deferred<Workflow>();
+    vi.mocked(client.plan).mockImplementation(() => gate.promise);
+    const store = createWorkspaceStore(() => client);
+    store.setState({ project, workflow: null });
+
+    const first = store.getState().plan({ goal: 'one' });
+    const second = store.getState().plan({ goal: 'two' });
+    await second;
+    expect(client.plan).toHaveBeenCalledTimes(1);
+    expect(store.getState().isPending('plan', 'project-1')).toBe(true);
+
+    // 不相关的动作不被误锁
+    await store.getState().loadNodes();
+    expect(client.listNodes).toHaveBeenCalledTimes(1);
+
+    gate.resolve(workflow);
+    await first;
+    expect(store.getState().pendingActions).toEqual([]);
+  });
+
+  it('clears only the matching pending action when one of two finishes', async () => {
+    const client = makeClient();
+    const slowSave = deferred<unknown>();
+    vi.mocked(client.createNode).mockImplementation(() => slowSave.promise as never);
+    const store = createWorkspaceStore(() => client);
+
+    const save = store.getState().saveNode({
+      id: 'node-a', name: 'A', kind: 'local', api_url: 'http://a.test',
+    });
+    const diagnose = store.getState().diagnoseNode('node-b');
+    await diagnose;
+    expect(store.getState().isPending('diagnose_node', 'node-b')).toBe(false);
+    expect(store.getState().isPending('save_node', 'node-a')).toBe(true);
+
+    slowSave.resolve({
+      id: 'node-a', name: 'A', kind: 'local', api_url: 'http://a.test',
+      ssh_host: null, ssh_port: null, ssh_user: null, ssh_key_path: null, status: 'unknown',
+      capabilities_json: {}, max_concurrency: 1, running_tasks: 0, success_rate: 1,
+      last_seen_at: null, credential_configured: false,
+    });
+    await save;
+    expect(store.getState().pendingActions).toEqual([]);
   });
 });

@@ -82,7 +82,12 @@ export default function WorkflowCanvas() {
 
   if (!workflow) {
     return <main className="workflow-canvas canvas-empty" aria-label={t('canvas.aria')}>
-      <form onSubmit={(event) => { event.preventDefault(); if (goal.trim()) void plan({ goal: goal.trim() }); }}>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        if (!goal.trim()) return;
+        const thinkingId = useWorkspaceStore.getState().selectedThinkingModelId;
+        void plan({ goal: goal.trim(), ...(thinkingId ? { thinking_model_id: thinkingId } : {}) });
+      }}>
         <h1>{project ? t('canvas.empty.title') : t('canvas.empty.noProject')}</h1>
         <p>{project ? t('canvas.empty.hint') : t('canvas.empty.noProjectHint')}</p>
         {project && <><label htmlFor="workflow-goal">{t('canvas.goal')}</label><textarea id="workflow-goal" value={goal} onChange={(event) => setGoal(event.target.value)} /><button type="submit" className="form-primary">{t('canvas.plan')}</button></>}
