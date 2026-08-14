@@ -338,6 +338,8 @@ def create_coordinator_app(
     from .runs import router as runs_router
     from .session import router as session_router
     from .thinking_models import router as thinking_models_router
+    from .diagnostics import router as diagnostics_router
+    from .recovery import router as recovery_router
     from .workflows import router as workflows_router
 
     for router in (
@@ -347,6 +349,8 @@ def create_coordinator_app(
         nodes_router,
         planner_router,
         thinking_models_router,
+        diagnostics_router,
+        recovery_router,
         artifacts_router,
         events_router,
         readiness_router,

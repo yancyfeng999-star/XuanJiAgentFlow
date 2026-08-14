@@ -16,6 +16,12 @@
 - [x] 不使用 `transition: all`；进度条不通过 width 过渡制造布局动画
 - [x] 状态色均有文字/图标冗余（状态徽章带文本，就绪中心带图标+文字）
 
+## 2026-08-14 产品基础
+
+- [x] 新增 `e2e/product-foundation-a11y.spec.ts` 键盘到达思考模型
+- [x] 新增 `e2e/product-foundation-responsive.spec.ts` 断点可见性
+- [ ] VoiceOver / 原生菜单 / 真实更新安装仍需真实 App（release-owner）
+
 ## 需人工执行的项（审核阶段 D4）
 
 | 项 | 方法 | 记录 |

@@ -44,6 +44,9 @@ if ! (cd "$APP_DIR" && npm ci); then
   (cd "$APP_DIR" && npm install)
 fi
 
+echo "=== 0. Open-source docs ==="
+bash "$ROOT/scripts/check-open-source-docs.sh"
+
 echo "=== 1. Backend tests ==="
 "$PY" -m pytest -q "$BACKEND_DIR/tests"
 

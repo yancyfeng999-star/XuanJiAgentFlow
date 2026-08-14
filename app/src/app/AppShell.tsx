@@ -11,7 +11,6 @@ import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
 import SettingsShell from '../features/settings/SettingsShell';
 import { getCoordinatorStatus, restartCoordinator, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
-import { runSilentUpdate } from '../lib/updater';
 import './AppShell.css';
 
 type BootState =
@@ -74,7 +73,6 @@ export default function AppShell() {
 
   useEffect(() => {
     if (boot.phase !== 'ready') return;
-    void runSilentUpdate();
     void loadReadiness();
     void (async () => {
       await loadProjects();

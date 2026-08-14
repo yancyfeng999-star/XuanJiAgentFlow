@@ -393,6 +393,7 @@ export interface CoordinatorClient {
   updateThinkingModel(id: string, input: Record<string, unknown>): Promise<ThinkingModelProfile>;
   deleteThinkingModel(id: string): Promise<void>;
   setDefaultThinkingModel(id: string): Promise<ThinkingModelProfile>;
+  getDiagnostics(): Promise<Record<string, unknown>>;
   getReadiness(query?: ReadinessQuery): Promise<ReadinessResult>;
   createWsTicket(runId: string): Promise<{ ticket: string; expires_in: number }>;
 }
@@ -489,6 +490,7 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     updateThinkingModel: (id, input) => request(`/api/thinking-models/${encodeURIComponent(id)}`, json('PATCH', input)),
     deleteThinkingModel: (id) => request(`/api/thinking-models/${encodeURIComponent(id)}`, json('DELETE')),
     setDefaultThinkingModel: (id) => request(`/api/thinking-models/${encodeURIComponent(id)}/default`, json('PUT')),
+    getDiagnostics: () => request('/api/diagnostics'),
     createWsTicket: (runId) => request('/api/session/ws-tickets', json('POST', { run_id: runId })),
     getReadiness: (query = {}) => {
       const params = new URLSearchParams();

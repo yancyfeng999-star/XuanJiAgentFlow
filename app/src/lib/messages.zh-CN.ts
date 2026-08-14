@@ -94,6 +94,12 @@ export const messages: Record<string, string> = {
   'thinking.testHint': '测试连接可能向提供商发出一次请求并产生费用。',
   'thinking.save': '保存思考模型',
   'thinking.select': '思考模型',
+  'update.check': '检查更新',
+  'update.download': '下载更新',
+  'update.install': '安装并重启',
+  'update.desktopOnly': '仅桌面版可检查更新',
+  'update.available': '发现版本 {version}',
+  'support.runDiagnostics': '运行诊断',
 
   'rail.brand': '智能任务协作 3.0',
   'rail.project': '项目',

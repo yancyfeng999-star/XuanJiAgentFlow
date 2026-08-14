@@ -35,5 +35,8 @@ jobs:
             app/src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('app/src-tauri/Cargo.lock') }}
 
+      - name: Check open-source docs
+        run: bash scripts/check-open-source-docs.sh
+
       - name: Run all local gates
         run: bash scripts/verify-all.sh --skip-tauri-build

@@ -1,5 +1,6 @@
 mod coordinator;
 mod tunnel;
+mod update_menu;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -313,6 +314,13 @@ fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> 
         true,
         &[
             &PredefinedMenuItem::about(app, Some(labels.about), Some(about_metadata))?,
+            &MenuItem::with_id(
+                app,
+                update_menu::CHECK_FOR_UPDATES_ID,
+                update_menu::check_for_updates_label(locale),
+                true,
+                None::<&str>,
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::hide(app, Some(labels.hide))?,
             &PredefinedMenuItem::hide_others(app, Some(labels.hide_others))?,

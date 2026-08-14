@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { I18nProvider } from '../../../lib/i18n';
 import { TaskNode } from '../nodes/TaskNode';
 import type { WorkflowTask } from '../../../lib/client';
+import type { TaskNodeData } from '../nodeTypes';
 
 afterEach(cleanup);
 
@@ -50,7 +51,7 @@ describe('TaskNode visual contract', () => {
         <ReactFlowProvider>
           <TaskNode
             id="card-1"
-            data={task}
+            data={task as TaskNodeData}
             selected={false}
             type="task"
             dragging={false}

@@ -4,6 +4,8 @@ import { useI18n, type Locale } from '../../lib/i18n';
 import { setThemePreference, type ThemePreference } from '../../lib/theme';
 import { useWorkspaceStore, type SettingsSection } from '../../store/workspaceStore';
 import ThinkingModels from '../thinking-models/ThinkingModels';
+import UpdateSettings from './UpdateSettings';
+import DiagnosticsCenter from '../support/DiagnosticsCenter';
 
 const SECTIONS: SettingsSection[] = [
   'appearance',
@@ -74,8 +76,8 @@ export default function SettingsShell() {
             </button>
           </>
         )}
-        {settingsSection === 'updates' && <h2>{t('settings.section.updates')}</h2>}
-        {settingsSection === 'support' && <h2>{t('settings.section.support')}</h2>}
+        {settingsSection === 'updates' && <UpdateSettings />}
+        {settingsSection === 'support' && <DiagnosticsCenter />}
         {settingsSection === 'about' && (
           <>
             <h2>{t('settings.section.about')}</h2>

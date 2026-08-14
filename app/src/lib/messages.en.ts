@@ -94,6 +94,12 @@ export const messages: Record<string, string> = {
   'thinking.testHint': 'A connection test may send one provider request and incur usage.',
   'thinking.save': 'Save thinking model',
   'thinking.select': 'Thinking model',
+  'update.check': 'Check for updates',
+  'update.download': 'Download update',
+  'update.install': 'Install and restart',
+  'update.desktopOnly': 'Updates can only be checked in the desktop app',
+  'update.available': 'Version {version} is available',
+  'support.runDiagnostics': 'Run diagnostics',
 
   'rail.brand': 'Agentic Task Collaboration 3.0',
   'rail.project': 'Project',
