@@ -55,6 +55,9 @@ describe('TaskNode visual contract', () => {
             selected={false}
             type="task"
             dragging={false}
+            selectable
+            deletable
+            draggable
             zIndex={1}
             isConnectable
             positionAbsoluteX={0}

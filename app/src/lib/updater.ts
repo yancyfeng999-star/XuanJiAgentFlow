@@ -35,96 +35,87 @@ export interface UpdateService {
   reset(): void;
 }
 
-class DefaultService implements UpdateService {
-  private state: UpdateState = { kind: 'idle' };
-  private listeners = new Set<(state: UpdateState) => void>();
-  private inflight: Promise<void> | null = null;
+function createDefaultService(adapter: UpdaterAdapter): UpdateService {
+  let state: UpdateState = { kind: 'idle' };
+  const listeners = new Set<(next: UpdateState) => void>();
+  let inflight: Promise<void> | null = null;
 
-  constructor(private readonly adapter: UpdaterAdapter) {}
+  const setState = (next: UpdateState) => {
+    state = next;
+    listeners.forEach((listener) => listener(next));
+  };
 
-  getState(): UpdateState {
-    return this.state;
-  }
+  const run = (task: () => Promise<void>): Promise<void> => {
+    if (inflight) return inflight;
+    inflight = task().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
 
-  subscribe(listener: (state: UpdateState) => void): () => void {
-    this.listeners.add(listener);
-    listener(this.state);
-    return () => this.listeners.delete(listener);
-  }
-
-  reset(): void {
-    this.setState({ kind: 'idle' });
-  }
-
-  async check(): Promise<void> {
-    return this.run(async () => {
-      if (!this.adapter.available) {
-        this.setState({ kind: 'desktop_only' });
-        return;
-      }
-      this.setState({ kind: 'checking' });
-      try {
-        const candidate = await this.adapter.check();
-        if (!candidate) {
-          this.setState({ kind: 'up_to_date', checkedAt: new Date().toISOString() });
+  return {
+    getState: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(state);
+      return () => listeners.delete(listener);
+    },
+    reset() {
+      setState({ kind: 'idle' });
+    },
+    check() {
+      return run(async () => {
+        if (!adapter.available) {
+          setState({ kind: 'desktop_only' });
           return;
         }
-        this.setState({ kind: 'available', candidate });
-      } catch (error) {
-        this.setState(fail('check', error));
-      }
-    });
-  }
-
-  async download(): Promise<void> {
-    return this.run(async () => {
-      const current = this.state;
-      if (current.kind !== 'available' && current.kind !== 'failed') return;
-      const candidate = 'candidate' in current && current.candidate
-        ? current.candidate
-        : null;
-      if (!candidate) return;
-      this.setState({ kind: 'downloading', candidate, progress: 0 });
-      try {
-        await this.adapter.download(candidate, (progress) => {
-          if (this.state.kind === 'downloading') {
-            this.setState({ kind: 'downloading', candidate, progress });
+        setState({ kind: 'checking' });
+        try {
+          const candidate = await adapter.check();
+          if (!candidate) {
+            setState({ kind: 'up_to_date', checkedAt: new Date().toISOString() });
+            return;
           }
-        });
-        this.setState({ kind: 'verifying', candidate });
-        this.setState({ kind: 'ready_to_install', candidate });
-      } catch (error) {
-        this.setState(fail('download', error));
-      }
-    });
-  }
-
-  async installAndRestart(): Promise<void> {
-    return this.run(async () => {
-      if (this.state.kind !== 'ready_to_install') return;
-      const { candidate } = this.state;
-      this.setState({ kind: 'installing', candidate });
-      try {
-        await this.adapter.install(candidate);
-        this.setState({ kind: 'restart_required', candidate });
-      } catch (error) {
-        this.setState(fail('install', error));
-      }
-    });
-  }
-
-  private run(task: () => Promise<void>): Promise<void> {
-    if (this.inflight) return this.inflight;
-    this.inflight = task().finally(() => {
-      this.inflight = null;
-    });
-    return this.inflight;
-  }
-
-  private setState(state: UpdateState): void {
-    this.state = state;
-    this.listeners.forEach((listener) => listener(state));
-  }
+          setState({ kind: 'available', candidate });
+        } catch (error) {
+          setState(fail('check', error));
+        }
+      });
+    },
+    download() {
+      return run(async () => {
+        const current = state;
+        if (current.kind !== 'available' && current.kind !== 'failed') return;
+        const candidate = 'candidate' in current && current.candidate ? current.candidate : null;
+        if (!candidate) return;
+        setState({ kind: 'downloading', candidate, progress: 0 });
+        try {
+          await adapter.download(candidate, (progress) => {
+            if (state.kind === 'downloading') {
+              setState({ kind: 'downloading', candidate, progress });
+            }
+          });
+          setState({ kind: 'verifying', candidate });
+          setState({ kind: 'ready_to_install', candidate });
+        } catch (error) {
+          setState(fail('download', error));
+        }
+      });
+    },
+    installAndRestart() {
+      return run(async () => {
+        if (state.kind !== 'ready_to_install') return;
+        const { candidate } = state;
+        setState({ kind: 'installing', candidate });
+        try {
+          await adapter.install(candidate);
+          setState({ kind: 'restart_required', candidate });
+        } catch (error) {
+          setState(fail('install', error));
+        }
+      });
+    },
+  };
 }
 
 function fail(stage: string, error: unknown): UpdateState {
@@ -133,7 +124,7 @@ function fail(stage: string, error: unknown): UpdateState {
 }
 
 export function createUpdateService(adapter: UpdaterAdapter): UpdateService {
-  return new DefaultService(adapter);
+  return createDefaultService(adapter);
 }
 
 export function browserUpdaterAdapter(): UpdaterAdapter {
@@ -161,8 +152,9 @@ export function createTauriUpdaterAdapter(): UpdaterAdapter {
       const update = await check();
       if (!update || update.version !== candidate.version) throw new Error('update_changed');
       await update.download((event) => {
-        if (event.event === 'Progress' && event.data.contentLength) {
-          onProgress(event.data.chunkLength / event.data.contentLength);
+        if (event.event === 'Progress') {
+          const data = event.data as { chunkLength: number; contentLength?: number };
+          onProgress(data.contentLength ? data.chunkLength / data.contentLength : null);
         }
       });
     },
