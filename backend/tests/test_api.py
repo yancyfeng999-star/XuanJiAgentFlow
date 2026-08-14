@@ -608,7 +608,7 @@ def test_default_app_reports_planner_not_configured_and_persists_redacted_config
             503,
             "planner_not_configured",
         )
-        assert error["message"] == "规划器尚未配置，请先前往“设置”完成配置"
+        assert error["message"] == "思考模型尚未配置，请先前往“思考模型”完成配置"
         assert error["details"] == {"configured": False}
         secret = "planner-secret-never-echo"
         configured = client.put(

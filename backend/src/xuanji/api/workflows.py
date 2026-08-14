@@ -71,7 +71,7 @@ async def plan(project_id: str, payload: PlanRequest, request: Request) -> dict:
         raise APIError(
             503,
             "planner_not_configured",
-            "规划器尚未配置，请先前往“设置”完成配置",
+            "思考模型尚未配置，请先前往“思考模型”完成配置",
             {"configured": False},
         )
     workflow = await services.planner.plan(

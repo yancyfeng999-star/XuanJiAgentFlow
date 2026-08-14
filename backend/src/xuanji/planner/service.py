@@ -34,7 +34,7 @@ class PlannerService:
                 if attempt == 1:
                     raise PlannerError(
                         "planner_invalid_output",
-                        "规划器返回的工作流格式无效，自动修复后仍未通过校验",
+                        "思考模型返回的工作流格式无效，自动修复后仍未通过校验",
                     ) from None
                 output = await self._provider.complete(
                     repair_messages(messages, output, str(error)),
@@ -46,7 +46,7 @@ class PlannerService:
     def _workflow(self, output: str, project_id: str, goal: str) -> Workflow:
         payload = json.loads(_strip_code_fence(output))
         if not isinstance(payload, dict):
-            raise TypeError("规划器返回内容必须是数据对象")
+            raise TypeError("思考模型返回内容必须是数据对象")
         payload["project_id"] = project_id
         payload["goal"] = goal
         payload["planner_provider"] = self._provider_name

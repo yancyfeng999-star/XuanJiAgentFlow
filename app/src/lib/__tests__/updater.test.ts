@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createUpdateService, type UpdateCandidate, type UpdaterAdapter } from '../updater';
+import { bindNativeUpdateMenu, createUpdateService, type UpdateCandidate, type UpdaterAdapter } from '../updater';
 
 function adapter(overrides: Partial<UpdaterAdapter> = {}): UpdaterAdapter & { downloads: number; installs: number; checks: number } {
   const candidate: UpdateCandidate = { version: '0.3.5', notes: 'notes', bytes: 10 };
@@ -63,5 +63,28 @@ describe('UpdateService', () => {
     resolveCheck(null);
     await Promise.all([first, second]);
     expect(mock.check).toHaveBeenCalledTimes(1);
+  });
+
+  it('native check-for-updates event opens updates and calls check without download', async () => {
+    const service = createUpdateService(adapter());
+    const openUpdates = vi.fn();
+    let handler: (() => void) | undefined;
+    const unlisten = await bindNativeUpdateMenu({
+      listen: async (event, next) => {
+        expect(event).toBe('xuanji://check-for-updates');
+        handler = next;
+        return () => {
+          handler = undefined;
+        };
+      },
+      check: () => service.check(),
+      openUpdates,
+    });
+    expect(handler).toBeDefined();
+    await handler?.();
+    expect(openUpdates).toHaveBeenCalledOnce();
+    expect(service.getState().kind).toBe('available');
+    expect((service.getState() as { kind: string }).kind).not.toBe('downloading');
+    unlisten();
   });
 });

@@ -11,6 +11,7 @@ import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
 import SettingsShell from '../features/settings/SettingsShell';
 import { getCoordinatorStatus, restartCoordinator, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
+import { bindNativeUpdateMenu, getUpdateService } from '../lib/updater';
 import './AppShell.css';
 
 type BootState =
@@ -33,6 +34,8 @@ export default function AppShell() {
   const navCollapsed = useWorkspaceStore((state) => state.navCollapsed);
   const inspectorCollapsed = useWorkspaceStore((state) => state.inspectorCollapsed);
   const inspectorWidth = useWorkspaceStore((state) => state.inspectorWidth);
+  const setActivePanel = useWorkspaceStore((state) => state.setActivePanel);
+  const setSettingsSection = useWorkspaceStore((state) => state.setSettingsSection);
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
   const t = useT();
   const { locale } = useI18n();
@@ -45,6 +48,32 @@ export default function AppShell() {
         /* 浏览器环境或菜单同步失败时静默 */
       });
   }, [locale]);
+
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import('@tauri-apps/api/event')
+      .then(({ listen }) => bindNativeUpdateMenu({
+        listen: (event, handler) => listen(event, handler).then((stop) => () => { stop(); }),
+        check: () => getUpdateService().check(),
+        openUpdates: () => {
+          setActivePanel('settings');
+          setSettingsSection('updates');
+        },
+      }))
+      .then((stop) => {
+        if (cancelled) stop();
+        else unlisten = stop;
+      })
+      .catch(() => {
+        /* 浏览器环境或菜单监听失败时静默 */
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [setActivePanel, setSettingsSection]);
 
   useEffect(() => {
     let cancelled = false;

@@ -112,6 +112,7 @@ describe('editable workflow workspace', () => {
     fireEvent.click(screen.getByText('图形处理器'));
     fireEvent.change(screen.getByLabelText('调度模式'), { target: { value: 'fixed' } });
     fireEvent.change(screen.getByLabelText('固定节点'), { target: { value: 'node-1' } });
+    fireEvent.click(screen.getByRole('tab', { name: '预期产物' }));
     fireEvent.change(screen.getByLabelText('文件类型'), { target: { value: 'text/markdown' } });
     fireEvent.click(screen.getByRole('button', { name: '保存任务' }));
 

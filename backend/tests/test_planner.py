@@ -224,7 +224,7 @@ async def test_planner_stops_after_one_failed_repair_with_stable_error(tmp_path)
         await service.plan("project_1", "Build report", "", {})
 
     assert exc_info.value.code == "planner_invalid_output"
-    assert str(exc_info.value) == "规划器返回的工作流格式无效，自动修复后仍未通过校验"
+    assert str(exc_info.value) == "思考模型返回的工作流格式无效，自动修复后仍未通过校验"
     assert call_count == 2
 
 
@@ -246,7 +246,7 @@ async def test_openai_provider_maps_unauthorized_without_leaking_credentials(tmp
         await provider.complete([], "deepseek-chat")
 
     assert exc_info.value.code == "planner_unauthorized"
-    assert str(exc_info.value) == "规划器身份验证失败，请检查接口密钥"
+    assert str(exc_info.value) == "思考模型身份验证失败，请检查接口密钥"
     assert "vault-only-secret" not in str(exc_info.value)
     assert "vault-only-secret" not in caplog.text
     assert (tmp_path / "credentials.json").stat().st_mode & 0o777 == 0o600
@@ -270,7 +270,7 @@ async def test_openai_provider_maps_timeout_to_stable_error(tmp_path):
         await provider.complete([], "deepseek-chat")
 
     assert exc_info.value.code == "planner_timeout"
-    assert str(exc_info.value) == "规划器服务请求超时"
+    assert str(exc_info.value) == "思考模型服务请求超时"
     assert "vault-only-secret" not in str(exc_info.value)
 
 

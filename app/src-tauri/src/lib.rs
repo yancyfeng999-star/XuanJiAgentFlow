@@ -12,7 +12,7 @@ use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use coordinator::{
     new_shared_supervisor, production_start_options, resolve_sidecar_path, CoordinatorError,
@@ -420,11 +420,17 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+fn handle_app_menu(app: &AppHandle, item_id: &str) {
+    update_menu::handle_check_for_updates_menu(item_id, |event| {
+        let _ = app.emit(event, ());
+    });
+}
+
 fn handle_status_tray_menu(app: &AppHandle, item_id: &str) {
     match item_id {
         STATUS_TRAY_SHOW_ID => show_main_window(app),
         STATUS_TRAY_QUIT_ID => app.exit(0),
-        _ => {}
+        _ => handle_app_menu(app, item_id),
     }
 }
 
@@ -483,6 +489,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .menu(|app| build_menu(app, "zh-CN"))
+        .on_menu_event(|app, event| handle_app_menu(app, event.id().as_ref()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

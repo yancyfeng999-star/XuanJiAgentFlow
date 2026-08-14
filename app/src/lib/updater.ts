@@ -169,6 +169,17 @@ export function createTauriUpdaterAdapter(): UpdaterAdapter {
 
 let shared: UpdateService | null = null;
 
+export async function bindNativeUpdateMenu(options: {
+  listen: (event: string, handler: () => void) => Promise<() => void>;
+  check: () => Promise<void>;
+  openUpdates: () => void;
+}): Promise<() => void> {
+  return options.listen('xuanji://check-for-updates', () => {
+    options.openUpdates();
+    void options.check();
+  });
+}
+
 export function getUpdateService(): UpdateService {
   if (!shared) {
     const adapter = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window

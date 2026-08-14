@@ -109,10 +109,17 @@ export default function Inspector() {
               onChange={applyPatch}
             />
           )}
-          {tab === 'execution' && <TaskExecutionTab task={selectedTask} />}
+          {tab === 'execution' && (
+            <TaskExecutionTab
+              draft={draft}
+              frozen={frozen}
+              nodes={nodes}
+              onChange={applyPatch}
+            />
+          )}
           {tab === 'outputs' && <TaskOutputsTab draft={draft} frozen={frozen} onChange={applyPatch} />}
           {tab === 'run_details' && <TaskRunDetailsTab />}
-          {!frozen && tab !== 'execution' && (
+          {!frozen && (
             <>
               <button type="button" className="form-primary" disabled={saveState === 'saving' || draftEquals(draft, taskToDraft(selectedTask))} onClick={() => void save()}>
                 {t('task.save')}
@@ -121,11 +128,6 @@ export default function Inspector() {
                 {t('task.delete')}
               </button>
             </>
-          )}
-          {!frozen && tab === 'execution' && (
-            <button type="button" className="danger-link" onClick={() => void removeTask(selectedTask.id)}>
-              {t('task.delete')}
-            </button>
           )}
         </>
       )}
