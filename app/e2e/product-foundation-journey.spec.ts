@@ -65,8 +65,10 @@ test('product foundation journey covers models, inspector, review, update check,
   await page.getByRole('button', { name: '审核工作流' }).click();
   const dialog = page.getByRole('dialog', { name: '审核工作流' });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('快照哈希')).toBeVisible();
   const ack = dialog.getByLabel('我已阅读并接受以上全部警告');
   if (await ack.count()) await ack.check();
+  await expect(dialog.getByRole('button', { name: '确认审核' })).toBeEnabled();
   await dialog.getByRole('button', { name: '确认审核' }).click();
   await expect(page.getByText('已审核，编辑已冻结')).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: /^选择任务：/ }).first().click();
