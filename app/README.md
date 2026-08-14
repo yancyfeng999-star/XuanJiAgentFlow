@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# 璇玑前端
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+`app/` 是 XuanJiAgentFlow 的 React + TypeScript + Vite 前端，以及 Tauri 集成源码。普通贡献者应优先使用浏览器模式；桌面 `.app` 构建属于隔离的发布流程。
 
-Currently, two official plugins are available:
+## 浏览器开发
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm ci
+VITE_COORDINATOR_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+然后打开 Vite 输出的本地地址。Coordinator 的 API 与 WebSocket 默认使用回环地址；真实 Planner Key、Node Token 和 SSH 私钥不应写入仓库。
+
+## 浏览器验证
+
+```bash
+npm test
+npm run lint
+npm run build -- --outDir /tmp/xuanji-web-dist
+```
+
+`--outDir /tmp/...` 用于把构建结果放到仓库外，避免污染工作区。
+
+## Tauri 边界
+
+不要在普通开发、测试或 Pull Request 验证中运行以下命令：
+
+```text
+npm run tauri dev
+npm run build:tauri
+```
+
+它们会生成或启动 macOS `.app`，可能在 LaunchServices / 应用菜单中留下重复条目。只有发布负责人在隔离环境中，经过版本、签名、公证和安装验收后，才可以执行桌面包流程。
+
+更多贡献、许可证、安全和发布边界见仓库根目录的 [`CONTRIBUTING.md`](../CONTRIBUTING.md)、[`LICENSE`](../LICENSE)、[`SECURITY.md`](../SECURITY.md) 与 [`docs/OPEN_SOURCE.md`](../docs/OPEN_SOURCE.md)。

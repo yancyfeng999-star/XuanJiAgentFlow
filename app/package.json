@@ -2,6 +2,12 @@
   "name": "app",
   "private": true,
   "version": "0.3.3",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yancyfeng999-star/XuanJiAgentFlow.git",
+    "directory": "app"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

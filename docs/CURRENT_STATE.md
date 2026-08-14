@@ -3,6 +3,8 @@
 > 日期：2026-07-29  
 > 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁、真实 Node Agent 集成测试与 Computer Use 桌面终验。只记录**已验证**能力。
 
+> 开源协作提示：本文包含历史桌面包验证证据，不是普通贡献者的构建指令。当前开发和 PR 验证默认不生成或启动 macOS `.app`；请遵循 [`docs/OPEN_SOURCE.md`](OPEN_SOURCE.md) 与 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 的隔离发布边界。
+
 ## 产品定位（已落地方向）
 
 璇玑 **XuanJiAgentFlowApp** 3.0（历史工程名 AgentFlow）是 **macOS 首发** 的本地分布式 AI 任务控制台。  

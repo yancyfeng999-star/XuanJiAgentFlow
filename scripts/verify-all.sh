@@ -7,12 +7,13 @@ NODE_AGENT_DIR="$ROOT/node-agent"
 APP_DIR="$ROOT/app"
 VENV_DIR="$ROOT/.venv"
 SKIP_E2E=false
-SKIP_TAURI_BUILD=false
+ALLOW_TAURI_BUILD=false
 
 for arg in "$@"; do
   case "$arg" in
     --skip-e2e) SKIP_E2E=true ;;
-    --skip-tauri-build) SKIP_TAURI_BUILD=true ;;
+    --allow-tauri-build) ALLOW_TAURI_BUILD=true ;;
+    --skip-tauri-build) ALLOW_TAURI_BUILD=false ;; # backwards-compatible explicit opt-out
     *)
       echo "Unknown option: $arg" >&2
       exit 2
@@ -117,21 +118,19 @@ echo
 echo "=== 10. Cargo check ==="
 cargo check --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
 
-if [[ "$SKIP_TAURI_BUILD" == false ]]; then
+if [[ "$ALLOW_TAURI_BUILD" == true ]]; then
   echo
-  echo "=== 11. Tauri production build (unsigned macOS .app if possible) ==="
+  echo "=== 11. Tauri production build (unsigned macOS .app if explicitly allowed) ==="
   (cd "$APP_DIR" && npm run build:tauri) || {
     echo "Tauri build failed. Falling back to cargo release + frontend dist only." >&2
     cargo build --release --manifest-path "$APP_DIR/src-tauri/Cargo.toml"
     echo "Release binary: $APP_DIR/src-tauri/target/release/xuanji (or xuanji-lib companion)"
-    echo "Use --skip-tauri-build after investigating, or install PyInstaller sidecar first."
+    echo "Remove --allow-tauri-build for the default no-App verification, or install the PyInstaller sidecar first."
     exit 1
   }
 else
   echo
-  echo "=== 11. Tauri build === SKIPPED (--skip-tauri-build)"
-  echo "Still running cargo release build for binary verification..."
-  cargo build --release --manifest-path "$APP_DIR/src-tauri/Cargo.toml" || true
+  echo "=== 11. Tauri build === SKIPPED (default; use --allow-tauri-build only in an isolated release environment)"
 fi
 
 echo

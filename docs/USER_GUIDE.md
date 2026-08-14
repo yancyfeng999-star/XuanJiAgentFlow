@@ -7,7 +7,7 @@
 - macOS（首发平台）
 - Python 3.11+
 - Node.js 20+ / npm
-- Rust / Cargo（Tauri）
+- Rust / Cargo（仅运行库测试时需要）
 - （可选）本机或远程 Hermes 节点
 
 ## 快速开始（开发）
@@ -37,14 +37,9 @@ VITE_COORDINATOR_URL=http://127.0.0.1:8000 npm run dev
 
 浏览器下 runtime 会把 Coordinator 默认指向 `VITE_COORDINATOR_URL` 或 `http://127.0.0.1:8000`。
 
-### 4. Tauri 开发壳
+### 4. 桌面壳边界
 
-```bash
-cd app
-npm run tauri dev
-```
-
-壳负责启动并监督 sidecar、健康检查通过后再加载工作区。协调器地址由应用内部管理，不在设置页显示；进程退出或连续健康检查失败时会自动重启并重新连接。
+普通开发不启动 Tauri 壳，也不运行 `npm run tauri dev` 或 `npm run build:tauri`。这些命令会生成/注册 macOS `.app`，可能让系统应用菜单出现多个璇玑副本；桌面包仅由发布负责人在隔离环境中处理。浏览器模式已经覆盖普通开发、测试和 Pull Request 验证。
 
 ## 工作流（UI）
 
@@ -60,7 +55,7 @@ npm run tauri dev
 
 ## 从 DMG 安装（未签名）
 
-1. 打开 `璇玑_0.3.0_aarch64.dmg`
+1. 从 [`release/README.md`](../release/README.md) 或 GitHub Release 选择当前安装包
 2. 将「璇玑.app」拖到 `Applications`
 3. 首次打开若被拦截：系统设置 → 隐私与安全性 → 仍要打开
 4. 启动后：
@@ -79,7 +74,7 @@ npm run tauri dev
 ## 验证
 
 ```bash
-bash scripts/verify-all.sh
+bash scripts/verify-all.sh --skip-tauri-build
 ```
 
 E2E 覆盖规划→编辑→审核→Fake 多节点执行→产物，以及取消 / 控制面 / 离线节点 / WS 回放；真实 Node Agent 集成测试覆盖 Hermes 轮询、阶段输入校验和下游依赖传递。
