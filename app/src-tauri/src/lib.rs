@@ -8,7 +8,9 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
+use tauri::image::Image;
+use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, State};
 
 use coordinator::{
@@ -16,6 +18,11 @@ use coordinator::{
     CoordinatorSupervisor, RuntimeInfo, SharedSupervisor, StartOptions,
 };
 use tunnel::{new_shared_tunnel_registry, SharedTunnelRegistry, TunnelRecord};
+
+const STATUS_TRAY_ID: &str = "xuanji-status";
+const STATUS_TRAY_SHOW_ID: &str = "xuanji-status-show";
+const STATUS_TRAY_STATE_ID: &str = "xuanji-status-state";
+const STATUS_TRAY_QUIT_ID: &str = "xuanji-status-quit";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -210,6 +217,10 @@ struct MenuLabels<'a> {
     window: &'a str,
     minimize: &'a str,
     maximize: &'a str,
+    tray_show: &'a str,
+    tray_state: &'a str,
+    tray_quit: &'a str,
+    tray_tooltip: &'a str,
 }
 
 fn menu_labels(locale: &str) -> MenuLabels<'static> {
@@ -233,6 +244,10 @@ fn menu_labels(locale: &str) -> MenuLabels<'static> {
             window: "Window",
             minimize: "Minimize",
             maximize: "Zoom",
+            tray_show: "Show 璇玑",
+            tray_state: "璇玑 is running",
+            tray_quit: "Quit 璇玑",
+            tray_tooltip: "璇玑 · AI Agent Orchestration",
         }
     } else {
         MenuLabels {
@@ -254,18 +269,27 @@ fn menu_labels(locale: &str) -> MenuLabels<'static> {
             window: "窗口",
             minimize: "最小化",
             maximize: "最大化",
+            tray_show: "显示璇玑",
+            tray_state: "璇玑正在运行",
+            tray_quit: "退出璇玑",
+            tray_tooltip: "璇玑 · 智能任务协作",
         }
     }
 }
 
 fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> {
     let labels = menu_labels(locale);
+    let about_metadata = AboutMetadataBuilder::new()
+        .name(Some("璇玑"))
+        .version(Some(app.package_info().version.to_string()))
+        .icon(app.default_window_icon().cloned())
+        .build();
     let app_menu = Submenu::with_items(
         app,
         "璇玑",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some(labels.about), None)?,
+            &PredefinedMenuItem::about(app, Some(labels.about), Some(about_metadata))?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::hide(app, Some(labels.hide))?,
             &PredefinedMenuItem::hide_others(app, Some(labels.hide_others))?,
@@ -277,7 +301,10 @@ fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> 
         app,
         labels.file,
         true,
-        &[&PredefinedMenuItem::close_window(app, Some(labels.close_window))?],
+        &[&PredefinedMenuItem::close_window(
+            app,
+            Some(labels.close_window),
+        )?],
     )?;
     let edit_menu = Submenu::with_items(
         app,
@@ -297,7 +324,10 @@ fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> 
         app,
         labels.view,
         true,
-        &[&PredefinedMenuItem::fullscreen(app, Some(labels.fullscreen))?],
+        &[&PredefinedMenuItem::fullscreen(
+            app,
+            Some(labels.fullscreen),
+        )?],
     )?;
     let window_menu = Submenu::with_items(
         app,
@@ -316,6 +346,72 @@ fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> 
     )
 }
 
+fn build_status_tray_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let labels = menu_labels(locale);
+    let show = MenuItem::with_id(
+        app,
+        STATUS_TRAY_SHOW_ID,
+        labels.tray_show,
+        true,
+        None::<&str>,
+    )?;
+    let state = MenuItem::with_id(
+        app,
+        STATUS_TRAY_STATE_ID,
+        labels.tray_state,
+        false,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(
+        app,
+        STATUS_TRAY_QUIT_ID,
+        labels.tray_quit,
+        true,
+        None::<&str>,
+    )?;
+    Menu::with_items(
+        app,
+        &[
+            &show,
+            &PredefinedMenuItem::separator(app)?,
+            &state,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn handle_status_tray_menu(app: &AppHandle, item_id: &str) {
+    match item_id {
+        STATUS_TRAY_SHOW_ID => show_main_window(app),
+        STATUS_TRAY_QUIT_ID => app.exit(0),
+        _ => {}
+    }
+}
+
+fn build_status_tray(app: &AppHandle, locale: &str) -> tauri::Result<()> {
+    let labels = menu_labels(locale);
+    let menu = build_status_tray_menu(app, locale)?;
+    let icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
+    TrayIconBuilder::with_id(STATUS_TRAY_ID)
+        .icon(icon)
+        .icon_as_template(true)
+        .tooltip(labels.tray_tooltip)
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| handle_status_tray_menu(app, event.id().as_ref()))
+        .build(app)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn set_app_locale(app: AppHandle, locale: String) -> Result<(), CommandError> {
     let menu = build_menu(&app, &locale).map_err(|e| CommandError {
@@ -326,6 +422,21 @@ fn set_app_locale(app: AppHandle, locale: String) -> Result<(), CommandError> {
         code: "menu_locale".into(),
         message: e.to_string(),
     })?;
+    if let Some(tray) = app.tray_by_id(STATUS_TRAY_ID) {
+        let tray_menu = build_status_tray_menu(&app, &locale).map_err(|e| CommandError {
+            code: "menu_locale".into(),
+            message: e.to_string(),
+        })?;
+        tray.set_menu(Some(tray_menu)).map_err(|e| CommandError {
+            code: "menu_locale".into(),
+            message: e.to_string(),
+        })?;
+        tray.set_tooltip(Some(menu_labels(&locale).tray_tooltip))
+            .map_err(|e| CommandError {
+                code: "menu_locale".into(),
+                message: e.to_string(),
+            })?;
+    }
     Ok(())
 }
 
@@ -347,6 +458,7 @@ pub fn run() {
         .manage(supervisor)
         .manage(tunnels)
         .setup(move |app| {
+            build_status_tray(&app.handle(), "zh-CN")?;
             if let Some(options) =
                 bootstrap_coordinator(&app.handle(), supervisor_for_setup.as_ref())
             {
@@ -386,5 +498,16 @@ mod tests {
     fn reexports_runtime_info_default_stopped() {
         let info = RuntimeInfo::default();
         assert_eq!(info.status, RuntimeStatus::Stopped);
+    }
+
+    #[test]
+    fn menu_labels_localize_status_tray() {
+        let chinese = super::menu_labels("zh-CN");
+        assert_eq!(chinese.tray_show, "显示璇玑");
+        assert_eq!(chinese.tray_state, "璇玑正在运行");
+
+        let english = super::menu_labels("en");
+        assert_eq!(english.tray_show, "Show 璇玑");
+        assert_eq!(english.tray_state, "璇玑 is running");
     }
 }

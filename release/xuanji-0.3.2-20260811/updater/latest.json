@@ -1,0 +1,11 @@
+{
+  "version": "0.3.2",
+  "notes": "璇玑 0.3.2：补 CSP、自动更新可关闭且运行中不重启、设置页版本与反馈入口、菜单随语言切换、最低系统 macOS 13、备份恢复演练、CI 上线。",
+  "pub_date": "2026-08-11T05:04:28Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSR1FYR0tvOE1mM09NeUtNTm1FYmVkTk9YVUlnU1lmYm0rUk02NGVTS0FFQ2VvV1BCT1RTTEpPNHQ0MkJ5S2dObmIrYXk3d0V1cnN4MVdTZFVXY0ttaGhSTVVvNjhka2dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NDI0NjUxCWZpbGU6eHVhbmppLmFwcC50YXIuZ3oKNlJ3Q3VsZmJlY3ErblQrTDNNUkNMSCtyaHU2Q3lDYVVJcmJzNjNkU0FOOEFmTGJGVmZmbEhGTm9pdWRlamFCdU8yYStMRnNMSVp0dEQxYWl4Zzd3Q3c9PQo=",
+      "url": "https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/download/v0.3.2/xuanji.app.tar.gz"
+    }
+  }
+}
