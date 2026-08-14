@@ -183,7 +183,11 @@ async def _diagnose(request: Request, node: HermesNode) -> tuple[HermesNode, dic
         layer = next((s["step"] for s in steps if s["status"] == "failed"), "node_agent")
         return _diagnose_failure(request, node, steps, layer)
 
-    degraded = health.status != "ok" or any(s["status"] == "failed" for s in steps)
+    connectivity_failed = any(
+        step["status"] == "failed" and step["step"] in {"node_agent", "hermes", "ssh"}
+        for step in steps
+    )
+    degraded = health.status != "ok" or connectivity_failed
     diagnosed = node.model_copy(
         update={
             "status": NodeStatus.DEGRADED if degraded else NodeStatus.ONLINE,

@@ -426,6 +426,24 @@ def test_run_pause_resume_cancel_retry_and_skip_routes(api_harness) -> None:
     assert not app.state.services.execution._loops.get(cancel_run["id"])
 
 
+def test_create_node_is_online_when_agent_works_even_if_hostname_does_not_resolve(api_harness) -> None:
+    client, _, _, _ = api_harness
+    created = client.post(
+        "/api/nodes",
+        json={
+            "id": "node-unresolvable",
+            "name": "Unresolvable Host",
+            "kind": "local",
+            "api_url": "http://no-such-host.invalid",
+            "capabilities_json": {"models": ["fake-model"], "tools": ["terminal"], "tags": ["fake"]},
+            "max_concurrency": 1,
+            "credential": "node-secret",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "online"
+
+
 def test_node_crud_diagnose_and_credentials_never_echo(api_harness) -> None:
     client, _, _, _ = api_harness
     node = create_node(client)
