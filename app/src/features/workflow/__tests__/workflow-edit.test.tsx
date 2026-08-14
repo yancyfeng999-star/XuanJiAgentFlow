@@ -96,6 +96,7 @@ describe('editable workflow workspace', () => {
     render(<AppShell />);
     await screen.findByRole('button', { name: '审核工作流' });
     act(() => useWorkspaceStore.getState().selectTask('research'));
+    fireEvent.click(screen.getByRole('tab', { name: '执行' }));
 
     await screen.findByText('终端');
     fireEvent.click(screen.getByText('m1'));

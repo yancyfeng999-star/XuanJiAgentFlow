@@ -22,6 +22,7 @@ import {
   type WorkflowTask,
 } from '../lib/client';
 import { getLocale, translate } from '../lib/i18n';
+import { wouldCreateCycle } from '../features/inspector/taskDraft';
 
 function storeText(key: string): string {
   return translate(getLocale(), key);
@@ -121,6 +122,7 @@ export interface WorkspaceState {
   loadProject: (projectId: string) => Promise<void>;
   plan: (input: PlanInput) => Promise<void>;
   updateTask: (taskId: string, changes: TaskChanges) => Promise<void>;
+  setTaskDependencies: (taskId: string, dependencies: string[]) => Promise<void>;
   addTask: () => Promise<void>;
   removeTask: (taskId: string) => Promise<void>;
   connectTasks: (sourceTaskId: string, targetTaskId: string) => Promise<void>;
@@ -543,6 +545,18 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           return;
         }
         await persistTasks(workflow.tasks.map((task) => task.id === taskId ? { ...task, ...changes } : task));
+      },
+      setTaskDependencies: async (taskId, dependencies) => {
+        const workflow = get().workflow;
+        if (!editable(workflow)) {
+          set({ error: { code: 'workflow_frozen', message: storeText('store.workflowFrozen'), details: {} } });
+          return;
+        }
+        if (wouldCreateCycle(workflow.tasks, taskId, dependencies)) {
+          set({ error: { code: 'workflow_cycle', message: storeText('store.workflowCycle'), details: {} } });
+          return;
+        }
+        await persistTasks(workflow.tasks.map((task) => task.id === taskId ? { ...task, dependencies } : task));
       },
       addTask: async () => {
         const workflow = get().workflow;

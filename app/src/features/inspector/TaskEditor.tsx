@@ -51,7 +51,7 @@ function outputMediaTypes(output: ExpectedOutput): string[] {
     : MEDIA_TYPES;
 }
 
-export default function TaskEditor({ task }: { task: WorkflowTask }) {
+export default function TaskEditor({ task, hideActions = false }: { task: WorkflowTask; hideActions?: boolean }) {
   const frozen = useWorkspaceStore((state) => state.workflow?.status !== 'draft');
   const workflow = useWorkspaceStore((state) => state.workflow);
   const nodes = useWorkspaceStore((state) => state.hermesNodes);
@@ -258,8 +258,8 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
           </button>
         )}
       </fieldset>
-      <button type="submit" className="form-primary" disabled={frozen}>{t('task.save')}</button>
-      {!frozen && <button type="button" className="danger-link" onClick={() => void removeTask(task.id)}>{t('task.delete')}</button>}
+      {!hideActions && <button type="submit" className="form-primary" disabled={frozen}>{t('task.save')}</button>}
+      {!hideActions && !frozen && <button type="button" className="danger-link" onClick={() => void removeTask(task.id)}>{t('task.delete')}</button>}
     </form>
   );
 }

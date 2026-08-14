@@ -412,6 +412,20 @@ describe('workspace store', () => {
     expect(store.getState().workflow?.tasks[0].title).toBe('Research');
     expect(store.getState().error).toMatchObject({ code: 'workflow_frozen' });
   });
+
+  it('rejects self-dependencies, unknown tasks, and cycles when editing dependencies', async () => {
+    const store = createWorkspaceStore(() => client);
+    await store.getState().loadProject('project-1');
+    await store.getState().setTaskDependencies('research', ['research']);
+    expect(store.getState().error).toMatchObject({ code: 'workflow_cycle' });
+    await store.getState().setTaskDependencies('research', ['missing']);
+    expect(store.getState().error).toMatchObject({ code: 'workflow_cycle' });
+    await store.getState().setTaskDependencies('research', ['write']);
+    expect(store.getState().error).toMatchObject({ code: 'workflow_cycle' });
+    expect(client.updateWorkflow).not.toHaveBeenCalled();
+    await store.getState().setTaskDependencies('write', ['research']);
+    expect(client.updateWorkflow).toHaveBeenCalled();
+  });
 });
 
 describe('action-level pending', () => {
