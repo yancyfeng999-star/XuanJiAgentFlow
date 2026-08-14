@@ -57,7 +57,7 @@ App = 图形手脚；Skill = 对话手脚。
 
 ## 已验证能力（摘要）
 
-- 本地凭据配置、Planner 校验与一次修复、能力感知调度
+- 本地凭据配置、思考模型校验与一次修复、能力感知调度
 - Fake 多节点执行、取消 / 重试 / 恢复、产物哈希下载
 - 按任务 SSH 隧道（`StrictHostKeyChecking=yes`）
 - Coordinator FastAPI + React 单一画布 + Tauri sidecar 监督
@@ -67,7 +67,7 @@ App = 图形手脚；Skill = 对话手脚。
 
 ## 安装包（已验证的 0.3.3 历史资产）
 
-真实远程服务器不需要预先配进安装包：安装后在界面填写服务器、SSH 用户、私钥路径、Node Token 与 Planner Key。安装包仅用于已有 Release 验收，不是普通开发步骤。
+真实远程服务器不需要预先配进安装包：安装后在界面填写服务器、SSH 用户、私钥路径、Node Token 与思考模型 Key。安装包仅用于已有 Release 验收，不是普通开发步骤。
 
 当前源码版本为 **0.3.4**。本次版本更新只同步源码与包元数据，未生成或注册新的 macOS `.app`、DMG、PKG 或更新包；下面路径仍是已存在的 0.3.3 安装资产。
 
@@ -116,6 +116,6 @@ cd app && npx playwright install chromium && npm run test:e2e
 ## 安全
 
 - 禁止提交 `.env`、数据库、venv、`node_modules`、Tauri `target`
-- SSH 私钥只保存路径；Node Token / Planner Key 写入仅当前用户可读的本地配置，不通过 API 回传
+- SSH 私钥只保存路径；Node Token / 思考模型 Key 写入仅当前用户可读的本地配置，不通过 API 回传
 - 不得使用 `StrictHostKeyChecking=no` 绕过主机校验
 - 漏洞报告与凭据边界见 [`SECURITY.md`](SECURITY.md)

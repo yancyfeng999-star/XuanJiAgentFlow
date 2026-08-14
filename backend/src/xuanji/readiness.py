@@ -102,15 +102,15 @@ class ReadinessService:
         if services.planner is None and planner_config is None:
             checks[CHECK_PLANNER] = "blocked"
             issues.append(_issue(
-                "planner_not_configured", "blocking", "规划器未配置",
-                "请在“设置”中填写 Planner 的 Base URL、模型和 API Key。",
+                "planner_not_configured", "blocking", "思考模型未配置",
+                "请在“思考模型”中填写接口地址、模型和 API Key。",
                 ACTION_OPEN_PLANNER,
             ))
         elif planner_config is not None and services.credentials.get(planner_config["credential_key"]) is None:
             checks[CHECK_PLANNER] = "blocked"
             issues.append(_issue(
-                "planner_credential_missing", "blocking", "规划器凭据缺失",
-                "Planner 的 API Key 未保存或已丢失，请在“设置”中重新填写。",
+                "planner_credential_missing", "blocking", "思考模型凭据缺失",
+                "思考模型的 API Key 未保存或已丢失，请在“思考模型”中重新填写。",
                 ACTION_OPEN_PLANNER,
             ))
         else:

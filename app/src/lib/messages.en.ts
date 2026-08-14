@@ -261,7 +261,7 @@ export const messages: Record<string, string> = {
   'provision.deploy': 'Deploy remotely',
 
   'settings.kicker': 'App configuration',
-  'settings.subtitle': 'Configure the task planner.',
+  'settings.subtitle': 'Configure thinking models.',
   'settings.interface': 'Interface',
 
   'planner.title': 'Thinking Model',
@@ -270,7 +270,7 @@ export const messages: Record<string, string> = {
   'planner.apiKey': 'Thinking Model API key',
   'planner.keyConfigured': 'API key configured',
   'planner.saved': 'Thinking Model configuration saved.',
-  'planner.save': 'Save planner configuration',
+  'planner.save': 'Save thinking model configuration',
 
   'common.loading': 'Loading…',
   'common.loadFailed': 'Failed to load',

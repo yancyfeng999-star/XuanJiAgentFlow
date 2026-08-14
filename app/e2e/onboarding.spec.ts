@@ -1,17 +1,17 @@
 import { expect, test } from '@playwright/test';
 
-import { apiCreateProject, apiPlan, apiReview, coordinatorUrl, ensureWorkspaceReady } from './helpers';
+import { apiCreateProject, apiPlan, apiReview, coordinatorUrl, ensureWorkspaceReady, selectProject } from './helpers';
 
 test.describe('onboarding readiness journeys', () => {
   test('first launch shows readiness center with checks', async ({ page, request }) => {
     const project = await apiCreateProject(request, `E2E Onboarding First ${Date.now()}`);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
     const center = page.getByRole('region', { name: '执行就绪检查' });
     await expect(center).toBeVisible();
     await expect(center.getByText('项目目录', { exact: true })).toBeVisible();
-    await expect(center.getByText('Planner')).toBeVisible();
+    await expect(center.getByText('思考模型')).toBeVisible();
     await expect(center.getByText('执行节点', { exact: true })).toBeVisible();
     await expect(center.getByText('尚未生成工作流')).toBeVisible();
   });
@@ -21,7 +21,7 @@ test.describe('onboarding readiness journeys', () => {
     await apiPlan(request, project.id);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
     await expect(page.getByRole('button', { name: '执行全部' })).toBeDisabled();
     await expect(page.getByLabel('顶部运行栏').getByText('工作流未审核')).toBeVisible();
   });
@@ -32,7 +32,7 @@ test.describe('onboarding readiness journeys', () => {
     await apiReview(request, workflow.id);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
     await expect(page.getByRole('button', { name: '执行全部' })).toBeEnabled({ timeout: 15_000 });
   });
 

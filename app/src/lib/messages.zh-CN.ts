@@ -270,7 +270,7 @@ export const messages: Record<string, string> = {
   'planner.apiKey': '思考模型接口密钥',
   'planner.keyConfigured': '接口密钥已配置',
   'planner.saved': '思考模型配置已保存。',
-  'planner.save': '保存规划器配置',
+  'planner.save': '保存思考模型配置',
 
   'common.loading': '加载中…',
   'common.loadFailed': '加载失败',

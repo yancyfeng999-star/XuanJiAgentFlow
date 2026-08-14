@@ -1,8 +1,8 @@
 # 当前真实状态
 
-> 能力验证日期：2026-08-12（候选分支 `candidate/ux-integration`，`scripts/verify-all.sh --skip-tauri-build` 全绿）  
-> 事实核对日期：2026-08-12（仅核对版本号与路径，未重跑测试；重跑后更新本文）  
-> 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁、真实 Node Agent 集成测试与 Computer Use 桌面终验。只记录**已验证**能力。
+> 能力验证日期：2026-08-14（`agent/xuanji-logo-menu-status-github`，`scripts/verify-all.sh --skip-tauri-build` 退出码 0）  
+> 事实核对日期：2026-08-14  
+> 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁。只记录**已验证**能力。状态为本地实现/测试候选，**不代表**已发布、已安装或独立审核通过。
 
 > 开源协作提示：本文包含历史桌面包验证证据，不是普通贡献者的构建指令。当前开发和 PR 验证默认不生成或启动 macOS `.app`；请遵循 [`docs/OPEN_SOURCE.md`](OPEN_SOURCE.md) 与 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 的隔离发布边界。
 
@@ -16,6 +16,19 @@
 - React 单一无限画布工作区（`AppShell`）；已删除旧多页 `pages/*` 与 `panels/*`。
 - Python Coordinator（FastAPI）负责项目、工作流、调度、执行、恢复、节点与产物。
 - 远程 Node 仅监听 `127.0.0.1`，按任务临时 SSH 隧道访问（`StrictHostKeyChecking=yes`）。
+
+## 已通过测试验证的能力（2026-08-14 Codex 风格产品基础）
+
+| 领域 | 验证方式 | 说明 |
+|---|---|---|
+| 视觉 token / 字阶 | vitest | 系统 sans + SF Mono；正文 13px；辅助 ≥12px；无产品 Songti / 9–10px |
+| 工作区导航 | vitest + Playwright | 项目 / 工作流 / 节点 / 思考模型 / 设置；项目面板不叠放检查器 |
+| 画布卡片清晰度 | Playwright | 选中/悬停无自身 transform |
+| 五标签检查器 | vitest + Playwright | 提示词与输入保存后 API 可见；审核后只读 + 修订 |
+| 思考模型 | pytest + vitest + Playwright | 双协议、唯一默认、密钥不回传；就绪文案不再写「规划器」 |
+| 更新状态机 | vitest + Playwright | 检查不下载不安装；浏览器显示 desktop-only |
+| 诊断脱敏 | pytest + vitest + Playwright | 支持摘要不含 Authorization / 密钥 / 完整 home 路径 |
+| 开源文档 | `check-open-source-docs.sh` | Apache-2.0 / NOTICE / 模板与 verify.yml 挂钩 |
 
 ## 已通过测试验证的能力（2026-08-12 候选新增）
 

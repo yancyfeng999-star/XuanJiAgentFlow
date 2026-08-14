@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { apiCreateProject, apiPlan, apiReview, coordinatorUrl, ensureWorkspaceReady } from './helpers';
+import { apiCreateProject, apiPlan, apiReview, coordinatorUrl, ensureWorkspaceReady, selectProject } from './helpers';
 
 test.describe('review workspace with immutable snapshots', () => {
   test('UI review binds snapshot and revision reopens editing', async ({ page, request }) => {
@@ -8,7 +8,7 @@ test.describe('review workspace with immutable snapshots', () => {
     const workflow = await apiPlan(request, project.id);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
 
     await page.getByRole('button', { name: '审核工作流' }).click();
     const dialog = page.getByRole('dialog', { name: '审核工作流' });

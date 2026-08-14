@@ -24,8 +24,8 @@ const blockedResult: ReadinessResult = {
       message: '请先创建一个项目并选择项目目录。', action: 'open_project', targetId: null,
     },
     {
-      code: 'planner_not_configured', severity: 'blocking', title: '规划器未配置',
-      message: '请在“设置”中填写 Planner 的 Base URL、模型和 API Key。', action: 'open_planner', targetId: null,
+      code: 'planner_not_configured', severity: 'blocking', title: '思考模型未配置',
+      message: '请在“思考模型”中填写接口地址、模型和 API Key。', action: 'open_planner', targetId: null,
     },
     {
       code: 'node_missing', severity: 'blocking', title: '尚未配置执行节点',
@@ -64,7 +64,7 @@ describe('ReadinessCenter', () => {
     expect(screen.getByText('尚未检查执行条件，点击“检查”开始。')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /检查/ }));
     await waitFor(() => expect(client.getReadiness).toHaveBeenCalled());
-    await screen.findByText('规划器未配置');
+    await screen.findByText('思考模型未配置');
   });
 
   it('lists all six checks and blocking issues with actions', async () => {
@@ -94,6 +94,6 @@ describe('ReadinessCenter', () => {
     useWorkspaceStore.setState({ readiness: readyResult });
     render(<ReadinessCenter />);
     expect(screen.getByText('所有条件已就绪，可以执行。')).toBeTruthy();
-    expect(screen.queryByText('规划器未配置')).toBeNull();
+    expect(screen.queryByText('思考模型未配置')).toBeNull();
   });
 });

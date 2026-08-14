@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { apiCreateProject, apiPlan, ensureWorkspaceReady } from './helpers';
+import { apiCreateProject, apiPlan, ensureWorkspaceReady, selectProject } from './helpers';
 
 test.describe('accessibility journeys', () => {
   test('review dialog traps focus, closes on Escape and returns focus', async ({ page, request }) => {
@@ -8,7 +8,7 @@ test.describe('accessibility journeys', () => {
     await apiPlan(request, project.id);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
 
     const reviewButton = page.getByRole('button', { name: '审核工作流' });
     await reviewButton.focus();
@@ -34,7 +34,7 @@ test.describe('accessibility journeys', () => {
     await apiPlan(request, project.id);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
 
     const nameless = await page.evaluate(() => {
       const controls = [...document.querySelectorAll('button, input, select, textarea, a[href]')];
@@ -57,7 +57,7 @@ test.describe('accessibility journeys', () => {
     await apiPlan(request, project.id);
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
 
     const status = page.getByLabel('顶部运行栏').locator('.status');
     await expect(status).not.toHaveText('');

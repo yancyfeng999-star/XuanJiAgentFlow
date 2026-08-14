@@ -192,7 +192,7 @@ export default function AppShell() {
     );
   }
 
-  const showInspector = (panel === 'workflow' || panel === 'projects') && !inspectorCollapsed;
+  const showInspector = panel === 'workflow' && !inspectorCollapsed;
   const railWidth = navCollapsed ? 52 : 216;
 
   return (
@@ -215,12 +215,9 @@ export default function AppShell() {
         </>
       )}
       {panel === 'projects' && (
-        <>
-          <div className="panel-stage">
-            <ProjectRail />
-          </div>
-          {showInspector && <Inspector />}
-        </>
+        <div className="panel-stage">
+          <ProjectRail />
+        </div>
       )}
       {panel === 'nodes' && (
         <div className="panel-stage">

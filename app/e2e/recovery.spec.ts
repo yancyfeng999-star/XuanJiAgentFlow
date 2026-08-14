@@ -11,6 +11,7 @@ import {
   apiStart,
   coordinatorUrl,
   ensureWorkspaceReady,
+  selectProject,
   waitForRun,
 } from './helpers';
 
@@ -283,16 +284,16 @@ test.describe('recovery and control paths', () => {
 
     await page.goto('/');
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
     await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });
 
     const other = await apiCreateProject(request, `E2E Restore Other ${Date.now()}`);
     await page.reload();
     await ensureWorkspaceReady(page);
-    await page.locator('.project-rail select').selectOption(other.id);
+    await selectProject(page, other.id);
     await expect(page.getByLabel('顶部运行栏').getByText('未运行')).toBeVisible();
 
-    await page.locator('.project-rail select').selectOption(project.id);
+    await selectProject(page, project.id);
     await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('运行历史')).toBeVisible();
   });

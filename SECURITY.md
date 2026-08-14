@@ -18,7 +18,7 @@
 
 ## 安全边界
 
-- Planner Key 和 Node Token 只允许保存在本地用户配置中，不应由 API 回传。
+- 思考模型 Key 和 Node Token 只允许保存在本地用户配置中，不应由 API 回传。
 - SSH 连接必须启用主机密钥校验（`StrictHostKeyChecking=yes`）。
 - 本地开发、测试和发布包中的凭据必须使用占位值或 Mock，不得使用真实账号。
 

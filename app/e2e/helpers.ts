@@ -88,3 +88,19 @@ export async function ensureWorkspaceReady(page: Page) {
   // Boot should finish: either workspace rail or (rarely) boot error.
   await expect(page.getByLabel('工作区导航')).toBeVisible({ timeout: 20_000 });
 }
+
+export async function openProjectsPanel(page: Page) {
+  await page.getByRole('navigation', { name: '工作区导航' }).getByRole('button', { name: '项目' }).click();
+  await expect(page.locator('.project-rail')).toBeVisible();
+}
+
+export async function openWorkflowPanel(page: Page) {
+  await page.getByRole('navigation', { name: '工作区导航' }).getByRole('button', { name: '工作流' }).click();
+  await expect(page.getByRole('main', { name: '工作流画布' })).toBeVisible();
+}
+
+export async function selectProject(page: Page, projectId: string) {
+  await openProjectsPanel(page);
+  await page.locator('#project-select').selectOption(projectId);
+  await openWorkflowPanel(page);
+}

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { coordinatorUrl, ensureWorkspaceReady } from './helpers';
+import { coordinatorUrl, ensureWorkspaceReady, openProjectsPanel } from './helpers';
 
 test.describe('node setup journeys', () => {
   test('wizard offers explicit local/remote choice and local discovery', async ({ page }) => {
@@ -50,6 +50,7 @@ test.describe('node setup journeys', () => {
 
   test('project rename and delete flow via API-backed UI', async ({ page, request }) => {
     await ensureWorkspaceReady(page);
+    await openProjectsPanel(page);
     const name = `E2E Project ${Date.now()}`;
     if (!(await page.getByLabel('项目名称').isVisible())) {
       await page.locator('.project-create-details summary').click();

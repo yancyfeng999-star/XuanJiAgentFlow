@@ -8,6 +8,8 @@ import {
   apiStart,
   coordinatorUrl,
   ensureWorkspaceReady,
+  openProjectsPanel,
+  openWorkflowPanel,
   waitForRun,
 } from './helpers';
 
@@ -25,6 +27,7 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     request,
   }, testInfo) => {
     await ensureWorkspaceReady(page);
+    await openProjectsPanel(page);
 
     const projectName = `画布交互测试 ${Date.now()}`;
     if (!(await page.getByLabel('项目名称').isVisible())) {
@@ -33,6 +36,7 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await page.getByLabel('项目名称').fill(projectName);
     await page.getByRole('button', { name: '创建项目' }).click();
     await expect(page.getByRole('banner', { name: '顶部运行栏' })).toContainText(projectName);
+    await openWorkflowPanel(page);
 
     await page.locator('#workflow-goal').fill('验证画布拖动和右键菜单功能');
     await page.getByRole('button', { name: '生成规划' }).click();
@@ -107,23 +111,26 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     request,
   }) => {
     await ensureWorkspaceReady(page);
+    await openProjectsPanel(page);
 
     // 1) Create project via UI
     if (!(await page.getByLabel('项目名称').isVisible())) {
       await page.locator('.project-create-details summary').click();
     }
-    await page.getByLabel('项目名称').fill('端到端本地工作流');
+    const projectName = `端到端本地工作流 ${Date.now()}`;
+    await page.getByLabel('项目名称').fill(projectName);
     await page.getByRole('button', { name: '创建项目' }).click();
     // <option> content is not "visible" to Playwright; assert via select value/text
     await expect
-      .poll(async () => page.locator('#project-select option', { hasText: '端到端本地工作流' }).count(), {
+      .poll(async () => page.locator('#project-select option', { hasText: projectName }).count(), {
         timeout: 10_000,
       })
       .toBeGreaterThan(0);
     await expect(page.locator('#project-select')).not.toHaveValue('', { timeout: 10_000 });
-    await expect(page.getByRole('banner', { name: '顶部运行栏' })).toContainText('端到端本地工作流', {
+    await expect(page.getByRole('banner', { name: '顶部运行栏' })).toContainText(projectName, {
       timeout: 10_000,
     });
+    await openWorkflowPanel(page);
 
     // 2) Plan
     await expect(page.getByLabel('工作流画布')).toBeVisible();
@@ -142,10 +149,11 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await expect(prompt).toBeVisible();
     await prompt.fill('端到端测试修改后的研究指令，审核前必须成功保存');
     await page.getByRole('button', { name: '保存任务' }).click();
+    await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
     // Confirm edit via API (same Coordinator)
     const projects = await (await request.get(`${coordinatorUrl()}/api/projects`)).json();
-    const project = projects.find((item: { name: string }) => item.name === '端到端本地工作流');
+    const project = projects.find((item: { name: string }) => item.name === projectName);
     expect(project).toBeTruthy();
     const workflow = await (
       await request.get(`${coordinatorUrl()}/api/projects/${project.id}/workflow`)

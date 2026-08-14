@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { apiCreateProject, apiPlan, ensureWorkspaceReady } from './helpers';
+import { apiCreateProject, apiPlan, ensureWorkspaceReady, selectProject } from './helpers';
 import { clarityGoal } from './fixtures/workflow';
 
 test.describe('workflow card clarity', () => {
@@ -12,6 +12,7 @@ test.describe('workflow card clarity', () => {
     await apiPlan(request, project.id, clarityGoal);
     await page.reload();
     await ensureWorkspaceReady(page);
+    await selectProject(page, project.id);
     const card = page.locator('.task-node').first();
     await expect(card).toBeVisible();
     await card.hover();
