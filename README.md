@@ -31,7 +31,7 @@
 | [`docs/NAMING.md`](docs/NAMING.md) | 命名与路径约定 |
 | [`01-产品定义.md`](01-产品定义.md) | 产品定义（与 PRODUCT_DEFINITION 对齐） |
 
-开源维护入口：[`docs/OPEN_SOURCE.md`](docs/OPEN_SOURCE.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md)
+开源维护入口：[`docs/OPEN_SOURCE.md`](docs/OPEN_SOURCE.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md)
 
 ## 工程文档
 
@@ -65,9 +65,11 @@ App = 图形手脚；Skill = 对话手脚。
 
 详见 [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)。
 
-## 安装包（本机临时签名）
+## 安装包（已验证的 0.3.3 历史资产）
 
 真实远程服务器不需要预先配进安装包：安装后在界面填写服务器、SSH 用户、私钥路径、Node Token 与 Planner Key。安装包仅用于已有 Release 验收，不是普通开发步骤。
+
+当前源码版本为 **0.3.4**。本次版本更新只同步源码与包元数据，未生成或注册新的 macOS `.app`、DMG、PKG 或更新包；下面路径仍是已存在的 0.3.3 安装资产。
 
 ```text
 release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg
