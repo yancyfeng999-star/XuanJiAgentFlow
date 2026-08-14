@@ -4,11 +4,12 @@ import { getLocale, translate, useI18n, useT } from '../lib/i18n';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkflowCanvas from '../features/canvas/WorkflowCanvas';
 import Inspector from '../features/inspector/Inspector';
+import WorkspaceNav from '../features/navigation/WorkspaceNav';
 import NodeManager from '../features/nodes/NodeManager';
 import ReadinessCenter from '../features/onboarding/ReadinessCenter';
 import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
-import PlannerSettings from '../features/settings/PlannerSettings';
+import SettingsShell from '../features/settings/SettingsShell';
 import { getCoordinatorStatus, restartCoordinator, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
 import { runSilentUpdate } from '../lib/updater';
 import './AppShell.css';
@@ -26,9 +27,13 @@ export default function AppShell() {
   const coordinatorBaseUrl = useWorkspaceStore((state) => state.coordinatorBaseUrl);
   const coordinatorSessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
+  const loadProject = useWorkspaceStore((state) => state.loadProject);
   const project = useWorkspaceStore((state) => state.project);
   const readiness = useWorkspaceStore((state) => state.readiness);
   const loadReadiness = useWorkspaceStore((state) => state.loadReadiness);
+  const navCollapsed = useWorkspaceStore((state) => state.navCollapsed);
+  const inspectorCollapsed = useWorkspaceStore((state) => state.inspectorCollapsed);
+  const inspectorWidth = useWorkspaceStore((state) => state.inspectorWidth);
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
   const t = useT();
   const { locale } = useI18n();
@@ -71,7 +76,12 @@ export default function AppShell() {
     if (boot.phase !== 'ready') return;
     void runSilentUpdate();
     void loadReadiness();
-  }, [boot.phase, loadReadiness]);
+    void (async () => {
+      await loadProjects();
+      const { projects, project } = useWorkspaceStore.getState();
+      if (!project && projects[0]) await loadProject(projects[0].id);
+    })();
+  }, [boot.phase, loadReadiness, loadProjects, loadProject]);
 
   useEffect(() => {
     if (boot.phase !== 'ready') return;
@@ -184,21 +194,44 @@ export default function AppShell() {
     );
   }
 
+  const showInspector = (panel === 'workflow' || panel === 'projects') && !inspectorCollapsed;
+  const railWidth = navCollapsed ? 52 : 216;
+
   return (
-    <div className="app-shell">
-      <ProjectRail />
+    <div
+      className={`app-shell${navCollapsed ? ' nav-collapsed' : ''}${inspectorCollapsed ? ' inspector-collapsed' : ''}`}
+      style={{
+        ['--nav-width' as string]: `${railWidth}px`,
+        ['--inspector-width' as string]: showInspector ? `${inspectorWidth}px` : '0px',
+      }}
+    >
+      <WorkspaceNav />
       <RunBar />
-      {panel === 'workflow' ? (
+      {panel === 'workflow' && (
         <>
           <div className="workflow-stage">
             {(!project || (readiness && !readiness.ready)) && <ReadinessCenter />}
             <WorkflowCanvas />
           </div>
-          <Inspector />
+          {showInspector && <Inspector />}
         </>
-      ) : (
+      )}
+      {panel === 'projects' && (
+        <>
+          <div className="panel-stage">
+            <ProjectRail />
+          </div>
+          {showInspector && <Inspector />}
+        </>
+      )}
+      {panel === 'nodes' && (
         <div className="panel-stage">
-          {panel === 'nodes' ? <NodeManager /> : <PlannerSettings />}
+          <NodeManager />
+        </div>
+      )}
+      {(panel === 'settings' || panel === 'thinking_models') && (
+        <div className="panel-stage">
+          <SettingsShell />
         </div>
       )}
       {error && (

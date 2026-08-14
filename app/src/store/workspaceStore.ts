@@ -33,7 +33,9 @@ export interface WorkspaceError {
   details: Record<string, unknown>;
 }
 
-export type WorkspacePanel = 'workflow' | 'nodes' | 'settings';
+export type WorkspacePanel = 'projects' | 'workflow' | 'nodes' | 'thinking_models' | 'settings';
+export type SettingsSection = 'appearance' | 'thinking_models' | 'execution' | 'updates' | 'support' | 'about';
+export const NAV_COLLAPSED_KEY = 'xuanji.workspace.nav-collapsed';
 
 export type PendingAction =
   | { kind: 'create_project'; key: 'new' }
@@ -90,6 +92,10 @@ export interface WorkspaceState {
   localDiscover: LocalDiscoverResult | null;
   selectedTaskId: string | null;
   activePanel: WorkspacePanel;
+  settingsSection: SettingsSection;
+  navCollapsed: boolean;
+  inspectorCollapsed: boolean;
+  inspectorWidth: number;
   plannerConfig: PlannerConfig;
   readiness: ReadinessResult | null;
   pendingActions: PendingAction[];
@@ -98,6 +104,10 @@ export interface WorkspaceState {
   setCoordinatorBaseUrl: (baseUrl: string, sessionToken?: string | null) => void;
   selectTask: (taskId: string | null) => void;
   setActivePanel: (panel: WorkspacePanel) => void;
+  setSettingsSection: (section: SettingsSection) => void;
+  setNavCollapsed: (collapsed: boolean) => void;
+  setInspectorCollapsed: (collapsed: boolean) => void;
+  setInspectorWidth: (width: number) => void;
   setRunStatus: (status: RunStatus) => void;
   setRunProgress: (progress: number) => void;
   applyRunMonitor: (update: MonitorUpdate) => void;
@@ -164,6 +174,10 @@ const initialState = {
   localDiscover: null as LocalDiscoverResult | null,
   selectedTaskId: null as string | null,
   activePanel: 'workflow' as WorkspacePanel,
+  settingsSection: 'appearance' as SettingsSection,
+  navCollapsed: false,
+  inspectorCollapsed: false,
+  inspectorWidth: 360,
   plannerConfig: emptyPlannerConfig,
   readiness: null as ReadinessResult | null,
   pendingActions: [] as PendingAction[],
@@ -345,6 +359,17 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       },
       selectTask: (selectedTaskId) => set({ selectedTaskId }),
       setActivePanel: (activePanel) => set({ activePanel }),
+      setSettingsSection: (settingsSection) => set({ settingsSection }),
+      setNavCollapsed: (navCollapsed) => {
+        try {
+          window.localStorage.setItem(NAV_COLLAPSED_KEY, navCollapsed ? '1' : '0');
+        } catch {
+          /* ignore */
+        }
+        set({ navCollapsed });
+      },
+      setInspectorCollapsed: (inspectorCollapsed) => set({ inspectorCollapsed }),
+      setInspectorWidth: (width) => set({ inspectorWidth: Math.min(520, Math.max(320, width)) }),
       setRunStatus: (runStatus) => set({ runStatus }),
       setRunProgress: (runProgress) => set({ runProgress: Math.max(0, Math.min(100, runProgress)) }),
       applyRunMonitor: (update) => set((state) => ({

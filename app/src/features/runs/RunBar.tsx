@@ -26,6 +26,8 @@ export default function RunBar() {
   const blockingIssue = readiness?.issues.find((issue) => issue.severity === 'blocking') ?? null;
   const executeDisabled = !canExecute || readiness?.ready === false;
 
+  const inspectorCollapsed = useWorkspaceStore((state) => state.inspectorCollapsed);
+  const setInspectorCollapsed = useWorkspaceStore((state) => state.setInspectorCollapsed);
   return (
     <header className="run-bar" aria-label={t('run.bar')}>
       <div className="run-title">
@@ -44,6 +46,16 @@ export default function RunBar() {
       </div>
       <span className="node-count"><Wifi size={15} />{t('run.nodesOnline', { count: online })}</span>
       <div className="run-actions">
+        {inspectorCollapsed && (
+          <button
+            type="button"
+            aria-label={t('inspector.expand')}
+            title={t('inspector.expand')}
+            onClick={() => setInspectorCollapsed(false)}
+          >
+            {t('inspector.expand')}
+          </button>
+        )}
         <ReviewGate />
         <RunControls />
         {executeDisabled && blockingIssue && (

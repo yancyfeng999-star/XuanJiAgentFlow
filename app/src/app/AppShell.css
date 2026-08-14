@@ -2,14 +2,139 @@
 
 /* ========== 骨架 ========== */
 .app-shell {
+  --nav-width: 216px;
+  --inspector-width: 360px;
   height: 100vh;
   width: 100vw;
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr) 328px;
-  grid-template-rows: 64px minmax(0, 1fr);
+  grid-template-columns: var(--nav-width) minmax(0, 1fr) var(--inspector-width);
+  grid-template-rows: 52px minmax(0, 1fr);
   background: var(--bg);
   color: var(--text-primary);
   position: relative;
+}
+.app-shell.inspector-collapsed {
+  grid-template-columns: var(--nav-width) minmax(0, 1fr);
+}
+.app-shell.inspector-collapsed .panel-stage {
+  grid-column: 2 / -1;
+}
+
+.workspace-nav {
+  grid-row: 1 / 3;
+  width: var(--nav-width);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 8px;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  border-right: 1px solid var(--sidebar-border);
+}
+.workspace-nav__brand {
+  font-size: var(--text-section);
+  font-weight: 600;
+  padding: 8px 10px 16px;
+}
+.workspace-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--control-height);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: var(--radius-control);
+  padding: 0 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.workspace-nav button.is-current,
+.workspace-nav button[aria-current="page"] {
+  background: var(--sidebar-active);
+  color: #fff;
+}
+.workspace-nav__collapse {
+  margin-top: auto;
+}
+.workspace-nav.is-collapsed button span {
+  display: none;
+}
+
+.settings-shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  height: 100%;
+  background: var(--surface);
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--border-subtle);
+}
+.settings-nav [role="tab"] {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  min-height: var(--control-height);
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.settings-nav [role="tab"][aria-selected="true"] {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.settings-panel {
+  padding: 24px;
+  overflow: auto;
+}
+.settings-panel h2 {
+  font-size: var(--text-title);
+  margin-bottom: 16px;
+}
+.settings-panel label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: var(--text-secondary);
+}
+
+.inspector-collapse {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+}
+.inspector { position: relative; }
+
+@media (max-width: 1099px) {
+  .app-shell:not(.inspector-collapsed) .inspector {
+    position: absolute;
+    right: 0;
+    top: 52px;
+    bottom: 0;
+    width: min(520px, 92vw);
+    z-index: 4;
+    box-shadow: var(--shadow-lg);
+  }
+  .app-shell {
+    grid-template-columns: var(--nav-width) minmax(0, 1fr);
+  }
+}
+@media (max-width: 859px) {
+  .workspace-nav:not(.is-collapsed) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    box-shadow: var(--shadow-lg);
+  }
 }
 
 /* ========== 项目资源栏（玄色） ========== */

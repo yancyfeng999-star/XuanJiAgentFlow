@@ -59,7 +59,7 @@ afterEach(cleanup);
 
 async function renderReadyShell() {
   render(<AppShell />);
-  await screen.findByRole('navigation', { name: '项目资源栏' });
+  await screen.findByRole('navigation', { name: '工作区导航' });
 }
 
 
@@ -162,11 +162,11 @@ describe('editable workflow workspace', () => {
     });
     await renderReadyShell();
 
-    fireEvent.click(screen.getByRole('button', { name: '执行节点' }));
+    fireEvent.click(screen.getByRole('button', { name: '节点' }));
 
     expect(await screen.findByText('访问密钥已配置')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '思考模型' }));
     expect(await screen.findByText('接口密钥已配置')).toBeInTheDocument();
   });
 
@@ -181,7 +181,7 @@ describe('editable workflow workspace', () => {
       node_id: 'remote-1', completed: false, steps: [{ step: 'verify_api_server', online: false }],
     });
     await renderReadyShell();
-    fireEvent.click(screen.getByRole('button', { name: '执行节点' }));
+    fireEvent.click(screen.getByRole('button', { name: '节点' }));
     await screen.findByText('访问密钥已配置');
     fireEvent.change(screen.getByLabelText('任务引擎端口'), { target: { value: '8642' } });
     fireEvent.click(screen.getByRole('button', { name: '远程部署' }));
@@ -192,7 +192,7 @@ describe('editable workflow workspace', () => {
     render(<AppShell />);
     await waitFor(() => expect(screen.getByText('Editable project')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: '设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '思考模型' }));
     expect(screen.queryByLabelText('协调器基础地址')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('规划器基础地址'), { target: { value: 'https://planner.test/v1' } });
     fireEvent.change(screen.getByLabelText('规划模型'), { target: { value: 'model' } });
@@ -202,7 +202,7 @@ describe('editable workflow workspace', () => {
     expect(client.setPlannerConfig).toHaveBeenCalled();
     expect(screen.getByLabelText('规划器接口密钥')).toHaveValue('');
 
-    fireEvent.click(screen.getByRole('button', { name: '执行节点' }));
+    fireEvent.click(screen.getByRole('button', { name: '节点' }));
     fireEvent.click(screen.getByRole('button', { name: /远程节点/ }));
     fireEvent.change(screen.getByLabelText('节点标识'), { target: { value: 'remote-1' } });
     fireEvent.change(screen.getByLabelText('节点名称'), { target: { value: 'Remote' } });

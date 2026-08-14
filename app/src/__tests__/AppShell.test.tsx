@@ -63,7 +63,7 @@ afterEach(cleanup);
 async function renderReadyShell() {
   render(<AppShell />);
   await waitFor(() => {
-    expect(screen.getByRole('navigation', { name: '项目资源栏' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '工作区导航' })).toBeInTheDocument();
   });
 }
 
@@ -71,10 +71,16 @@ describe('Xuanji 2.0 workspace shell', () => {
   it('renders exactly the four core workspace regions after coordinator is healthy', async () => {
     await renderReadyShell();
 
+    expect(screen.getByRole('navigation', { name: '工作区导航' })).toBeInTheDocument();
     expect(screen.getByRole('banner', { name: '顶部运行栏' })).toBeInTheDocument();
     expect(screen.getByRole('main', { name: '工作流画布' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: '节点检查器' })).toBeInTheDocument();
     expect(screen.queryByText('传统流程')).not.toBeInTheDocument();
+  });
+
+  it('keeps inspector landmark and collapse control on a wide three-pane shell', async () => {
+    await renderReadyShell();
+    expect(screen.getByRole('button', { name: '收起检查器' })).toBeInTheDocument();
   });
 
   it('shows a selected task from the server workflow snapshot in the inspector', async () => {

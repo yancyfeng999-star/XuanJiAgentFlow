@@ -5,7 +5,7 @@ import { coordinatorUrl, ensureWorkspaceReady } from './helpers';
 test.describe('node setup journeys', () => {
   test('wizard offers explicit local/remote choice and local discovery', async ({ page }) => {
     await ensureWorkspaceReady(page);
-    await page.getByRole('button', { name: '执行节点' }).click();
+    await page.getByRole('button', { name: '节点' }).click();
     await expect(page.getByRole('button', { name: /本机节点/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /远程节点/ })).toBeVisible();
 

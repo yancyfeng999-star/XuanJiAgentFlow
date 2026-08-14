@@ -1,21 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { FolderOpen, GitBranch, Moon, Network, Pencil, Plus, Settings2, Sparkles, Sun, Trash2 } from 'lucide-react';
+import { FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { useI18n } from '../../lib/i18n';
 import { selectProjectDir } from '../../lib/runtime';
-import { resolveTheme, toggleTheme, type ResolvedTheme } from '../../lib/theme';
-import { useWorkspaceStore, type WorkspacePanel } from '../../store/workspaceStore';
-
-const items: Array<[typeof GitBranch, string, WorkspacePanel]> = [
-  [GitBranch, 'nav.workflow', 'workflow'],
-  [Network, 'nav.nodes', 'nodes'],
-  [Settings2, 'nav.settings', 'settings'],
-];
+import { useWorkspaceStore } from '../../store/workspaceStore';
 
 export default function ProjectRail() {
   const projects = useWorkspaceStore((state) => state.projects);
   const project = useWorkspaceStore((state) => state.project);
-  const activePanel = useWorkspaceStore((state) => state.activePanel);
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
   const loadProject = useWorkspaceStore((state) => state.loadProject);
   const createProject = useWorkspaceStore((state) => state.createProject);
@@ -27,13 +19,11 @@ export default function ProjectRail() {
     state.pendingActions.some((action) => action.kind === 'rename_project'));
   const deleting = useWorkspaceStore((state) =>
     state.pendingActions.some((action) => action.kind === 'delete_project'));
-  const setActivePanel = useWorkspaceStore((state) => state.setActivePanel);
   const [name, setName] = useState('');
   const [rootPath, setRootPath] = useState('');
   const [renamingTo, setRenamingTo] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
-  const [theme, setTheme] = useState<ResolvedTheme>(() => resolveTheme());
   const deleteDialogRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
 
@@ -76,14 +66,6 @@ export default function ProjectRail() {
 
   return (
     <nav className="project-rail" aria-label={t('nav.rail')}>
-      <div className="brand">
-        <Sparkles size={20} />
-        <div>
-          <b>璇玑</b>
-          <small>{t('rail.brand')}</small>
-        </div>
-      </div>
-
       <label className="rail-label" htmlFor="project-select">
         {t('rail.project')}
       </label>
@@ -173,33 +155,6 @@ export default function ProjectRail() {
           </div>
         </form>
       </details>
-
-      <ul>
-        {items.map(([Icon, labelKey, panel]) => (
-          <li key={panel}>
-            <button
-              type="button"
-              className={activePanel === panel ? 'active' : ''}
-              onClick={() => setActivePanel(panel)}
-            >
-              <Icon size={17} />
-              {t(labelKey)}
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <div className="rail-footer">
-        <button
-          type="button"
-          className="theme-toggle"
-          aria-label={theme === 'dark' ? t('theme.toLight') : t('theme.toDark')}
-          onClick={() => setTheme(toggleTheme())}
-        >
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-          {theme === 'dark' ? t('theme.light') : t('theme.dark')}
-        </button>
-      </div>
 
       {confirmDelete && project && (
         <div className="modal-backdrop">

@@ -21,8 +21,18 @@ export default function Inspector() {
     ? nodes.find((node) => node.id === attempt.node_id)?.name ?? attempt.node_id
     : t('inspector.unassigned');
 
+  const setInspectorCollapsed = useWorkspaceStore((state) => state.setInspectorCollapsed);
   return (
     <aside className="inspector" aria-label={t('inspector.title')}>
+      <button
+        type="button"
+        className="inspector-collapse"
+        aria-label={t('inspector.collapse')}
+        title={t('inspector.collapse')}
+        onClick={() => setInspectorCollapsed(true)}
+      >
+        ×
+      </button>
       {!task ? (
         <div className="inspector-empty">
           <Bot size={28} />
