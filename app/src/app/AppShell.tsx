@@ -5,10 +5,11 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkflowCanvas from '../features/canvas/WorkflowCanvas';
 import Inspector from '../features/inspector/Inspector';
 import NodeManager from '../features/nodes/NodeManager';
+import ReadinessCenter from '../features/onboarding/ReadinessCenter';
 import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
 import PlannerSettings from '../features/settings/PlannerSettings';
-import { getCoordinatorStatus, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
+import { getCoordinatorStatus, restartCoordinator, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
 import { runSilentUpdate } from '../lib/updater';
 import './AppShell.css';
 
@@ -25,6 +26,9 @@ export default function AppShell() {
   const coordinatorBaseUrl = useWorkspaceStore((state) => state.coordinatorBaseUrl);
   const coordinatorSessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
+  const project = useWorkspaceStore((state) => state.project);
+  const readiness = useWorkspaceStore((state) => state.readiness);
+  const loadReadiness = useWorkspaceStore((state) => state.loadReadiness);
   const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
   const t = useT();
   const { locale } = useI18n();
@@ -66,7 +70,8 @@ export default function AppShell() {
   useEffect(() => {
     if (boot.phase !== 'ready') return;
     void runSilentUpdate();
-  }, [boot.phase]);
+    void loadReadiness();
+  }, [boot.phase, loadReadiness]);
 
   useEffect(() => {
     if (boot.phase !== 'ready') return;
@@ -114,14 +119,66 @@ export default function AppShell() {
   }
 
   if (boot.phase === 'error') {
+    const retryBoot = async () => {
+      setBoot({ phase: 'booting' });
+      try {
+        const runtime = await waitForHealthyRuntime({ timeoutMs: 30_000, intervalMs: 200 });
+        if (runtime.baseUrl) setCoordinatorBaseUrl(runtime.baseUrl, runtime.sessionToken);
+        setBoot({ phase: 'ready', runtime });
+      } catch (err) {
+        setBoot({
+          phase: 'error',
+          message: err instanceof Error && /[一-鿿]/.test(err.message)
+            ? err.message
+            : translate(getLocale(), 'app.bootError.fallback'),
+        });
+      }
+    };
+    const restartAndRetry = async () => {
+      await restartCoordinator().catch(() => null);
+      await retryBoot();
+    };
+    const copyDiagnostics = async () => {
+      const runtime = await getCoordinatorStatus().catch(() => null);
+      const report = [
+        `time: ${new Date().toISOString()}`,
+        `error: ${boot.message}`,
+        `runtime_status: ${runtime?.status ?? 'unknown'}`,
+        `base_url: ${runtime?.baseUrl ?? 'none'}`,
+        'note: 诊断信息不含会话令牌、凭据或私钥内容',
+      ].join('\n');
+      try {
+        await navigator.clipboard.writeText(report);
+      } catch {
+        /* 剪贴板不可用时忽略 */
+      }
+    };
+    const quitApp = () => {
+      if ('__TAURI_INTERNALS__' in window) {
+        void import('@tauri-apps/plugin-process').then(({ exit }) => exit(0)).catch(() => window.close());
+      } else {
+        window.close();
+      }
+    };
     return (
       <div className="app-shell boot-shell" role="alert">
         <div className="boot-card boot-error">
           <strong>{t('app.bootError.title')}</strong>
           <span>{boot.message}</span>
-          <button type="button" onClick={() => window.location.reload()}>
-            {t('app.bootError.retry')}
-          </button>
+          <div className="boot-actions">
+            <button type="button" onClick={() => void retryBoot()}>
+              {t('app.bootError.retry')}
+            </button>
+            <button type="button" onClick={() => void restartAndRetry()}>
+              {t('app.bootError.restartCoordinator')}
+            </button>
+            <button type="button" onClick={() => void copyDiagnostics()}>
+              {t('app.bootError.copyDiagnostics')}
+            </button>
+            <button type="button" onClick={quitApp}>
+              {t('app.bootError.quit')}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -133,7 +190,10 @@ export default function AppShell() {
       <RunBar />
       {panel === 'workflow' ? (
         <>
-          <WorkflowCanvas />
+          <div className="workflow-stage">
+            {(!project || (readiness && !readiness.ready)) && <ReadinessCenter />}
+            <WorkflowCanvas />
+          </div>
           <Inspector />
         </>
       ) : (

@@ -23,6 +23,7 @@ from xuanji.nodes import (
     TaskDispatch,
     TaskInput,
     TaskOutputPolicy,
+    VerifyStep,
 )
 from xuanji.scheduler import SchedulerService, ready_tasks, transition_run, transition_task
 from xuanji.storage.database import Database
@@ -36,7 +37,7 @@ from xuanji.storage.repositories import (
 )
 
 _TERMINAL_RUNS = {RunStatus.CANCELLED, RunStatus.SUCCESS, RunStatus.FAILED}
-_TERMINAL_TASKS = {TaskStatus.SUCCESS, TaskStatus.CANCELLED, TaskStatus.SKIPPED}
+_TERMINAL_TASKS = {TaskStatus.SUCCESS, TaskStatus.CANCELLED, TaskStatus.SKIPPED, TaskStatus.NEEDS_REVIEW}
 _ACTIVE_TASKS = {TaskStatus.RUNNING, TaskStatus.DISPATCHING, TaskStatus.COLLECTING, TaskStatus.CANCELLING}
 _FAILURE_TASKS = {TaskStatus.FAILED, TaskStatus.ARTIFACT_FAILED, TaskStatus.DISPATCH_FAILED, TaskStatus.BLOCKED}
 _TRANSIENT_ERROR_CODES = {"node_connection_error", "node_timeout"}
@@ -150,7 +151,7 @@ class ExecutionManager:
             workflow = self._workflow(run.workflow_id)
             task = self._task(workflow, task_id)
             previous = self.runs.latest_attempts(run_id).get(task_id)
-            if previous is None or previous.status not in _FAILURE_TASKS:
+            if previous is None or previous.status not in _FAILURE_TASKS | {TaskStatus.NEEDS_REVIEW}:
                 raise ValueError(f"任务 {task_id} 当前不可重试")
             if previous.attempt >= task.retry_policy.max_attempts:
                 raise ValueError(f"任务 {task_id} 已用完重试次数")
@@ -286,6 +287,10 @@ class ExecutionManager:
             self._set_attempt_status(attempt, TaskStatus.COLLECTING)
             await self._collect(run, workflow, task, attempt)
             return
+        if remote.status == "needs_review":
+            self._set_attempt_status(attempt, TaskStatus.COLLECTING)
+            await self._collect(run, workflow, task, attempt, needs_review=True)
+            return
         attempt.error = {"code": "node_protocol_error", "message": f"节点返回未知状态：{remote.status}"}
         self._set_attempt_status(attempt, TaskStatus.BLOCKED)
 
@@ -410,6 +415,10 @@ class ExecutionManager:
                     mode="strict" if task.expected_outputs else "discover",
                     expected=[output.path for output in task.expected_outputs],
                 ),
+                writes=list(task.writes),
+                done_definition=list(task.done_definition),
+                verify=[VerifyStep.model_validate(step.model_dump()) for step in task.verify],
+                run_gate=task.run_gate,
             )
             remote = await client.create_task(dispatch)
             for item, body in staged_inputs:
@@ -436,7 +445,14 @@ class ExecutionManager:
         attempt.started_at = attempt.started_at or datetime.now(timezone.utc)
         self._set_attempt_status(attempt, TaskStatus.RUNNING)
 
-    async def _collect(self, run: Run, workflow: Workflow, task: Task, attempt: TaskAttempt) -> None:
+    async def _collect(
+        self,
+        run: Run,
+        workflow: Workflow,
+        task: Task,
+        attempt: TaskAttempt,
+        needs_review: bool = False,
+    ) -> None:
         try:
             client = await self._client_for_attempt(attempt)
         except (NodeClientError, TunnelError) as error:
@@ -481,7 +497,10 @@ class ExecutionManager:
         attempt.result_manifest = manifest.model_dump(mode="json")
         attempt.completed_at = datetime.now(timezone.utc)
         attempt.error = None
-        attempt.status = transition_task(previous, TaskStatus.SUCCESS)
+        attempt.status = transition_task(
+            previous,
+            TaskStatus.NEEDS_REVIEW if needs_review else TaskStatus.SUCCESS,
+        )
         artifacts = [
             Artifact(
                 id=f"{attempt.id}:{entry.path}",
@@ -540,12 +559,17 @@ class ExecutionManager:
     def _settle_run(self, run: Run, workflow: Workflow) -> None:
         attempts = self.runs.latest_attempts(run.id)
         if len(attempts) == len(workflow.tasks) and all(
-            attempt.status in {TaskStatus.SUCCESS, TaskStatus.SKIPPED} for attempt in attempts.values()
+            attempt.status in {TaskStatus.SUCCESS, TaskStatus.SKIPPED, TaskStatus.NEEDS_REVIEW}
+            for attempt in attempts.values()
         ):
             artifacts = [artifact.model_dump(mode="json") for artifact in self.artifact_repository.list_for_run(run.id)]
             self.artifacts.write_delivery_manifest(workflow.project_id, run.id, artifacts)
             run.completed_at = datetime.now(timezone.utc)
-            self._set_run_status(run, RunStatus.SUCCESS)
+            needs_review = any(attempt.status is TaskStatus.NEEDS_REVIEW for attempt in attempts.values())
+            self._set_run_status(
+                run,
+                RunStatus.SUCCESS_WITH_WARNINGS if needs_review else RunStatus.SUCCESS,
+            )
             return
         can_progress = bool(ready_tasks(workflow, attempts, run.status, lambda _: True))
         has_active = any(attempt.status in _ACTIVE_TASKS for attempt in attempts.values())

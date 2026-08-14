@@ -38,6 +38,7 @@
   --pending-bg: #F0EBDC;
   --failed: #B53A2C;
   --failed-bg: #F9ECE6;
+  --warning: #A96F1F;
   --paused: #A96F1F;
   --paused-bg: #F7EDDA;
 
@@ -115,6 +116,7 @@
   --pending-bg: rgba(133, 126, 108, 0.16);
   --failed: #D96A55;
   --failed-bg: rgba(217, 106, 85, 0.16);
+  --warning: #CE9B3F;
   --paused: #CE9B3F;
   --paused-bg: rgba(206, 155, 63, 0.16);
 

@@ -320,3 +320,35 @@ async def test_openai_provider_rejects_non_string_content(tmp_path):
 
 def test_planner_provider_protocol_describes_complete_interface():
     assert callable(getattr(PlannerProvider, "complete", None))
+
+
+def test_planner_schema_includes_delivery_contract() -> None:
+    from xuanji.domain.models import Workflow
+
+    schema = Workflow.model_json_schema()
+    task_schema = schema["$defs"]["Task"]["properties"]
+    assert "writes" in task_schema
+    assert "done_definition" in task_schema
+    assert "verify" in task_schema
+    assert "run_gate" in task_schema
+    verify_step = schema["$defs"]["VerifyStep"]["properties"]
+    assert verify_step["kind"]["enum"] == ["command", "file_exists", "sha256", "manual"]
+
+
+def test_workflow_validates_delivery_contract_fields() -> None:
+    from xuanji.domain.models import Task, VerifyStep, Workflow
+
+    workflow = Workflow(
+        id="wf", project_id="p", version=1, goal="g",
+        tasks=[Task(
+            id="t1", workflow_id="wf", title="T",
+            writes=["out/report.md"],
+            done_definition=["报告包含结论"],
+            verify=[VerifyStep(kind="file_exists", value="out/report.md")],
+            run_gate="review_before_complete",
+        )],
+    )
+    dumped = workflow.model_dump(mode="json")
+    restored = Workflow.model_validate(dumped)
+    assert restored.tasks[0].verify[0].kind == "file_exists"
+    assert restored.tasks[0].run_gate == "review_before_complete"

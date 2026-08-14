@@ -14,6 +14,7 @@ from .protocol import (
     NodeLogPage,
     NodeTask,
     TaskDispatch,
+    VerifyStep,
     TaskInput,
     TaskOutputPolicy,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "NodeRegistry",
     "NodeTask",
     "TaskDispatch",
+    "VerifyStep",
     "TaskInput",
     "TaskOutputPolicy",
     "NodeTimeoutError",

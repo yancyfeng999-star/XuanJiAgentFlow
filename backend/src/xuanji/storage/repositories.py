@@ -83,23 +83,27 @@ class WorkflowRepository:
         data = _dump(workflow)
         with self.database.transaction() as connection:
             connection.execute(
-                "INSERT INTO workflows(id,project_id,version,goal,planner_provider,planner_model,status,graph_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO workflows(id,project_id,version,goal,planner_provider,planner_model,status,graph_json,reviewed_at,reviewed_by,review_snapshot_hash,review_warnings_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     data["id"], data["project_id"], data["version"], data["goal"], data["planner_provider"],
-                    data["planner_model"], data["status"], _json(data["graph_json"]), data["created_at"],
+                    data["planner_model"], data["status"], _json(data["graph_json"]),
+                    data["reviewed_at"], data["reviewed_by"], data["review_snapshot_hash"],
+                    _json(data["review_warnings"]), data["created_at"],
                 ),
             )
             for task in workflow.tasks:
                 task_data = _dump(task)
                 connection.execute(
                     """INSERT INTO tasks(id,workflow_id,title,description,prompt,agent_type,dependencies_json,
-                    execution_policy_json,retry_policy_json,expected_outputs_json,ui_position_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    execution_policy_json,retry_policy_json,expected_outputs_json,writes_json,done_definition_json,verify_json,run_gate,ui_position_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         task_data["id"], task_data["workflow_id"], task_data["title"], task_data["description"],
                         task_data["prompt"], task_data["agent_type"], _json(task_data["dependencies"]),
                         _json(task_data["execution_policy"]), _json(task_data["retry_policy"]),
-                        _json(task_data["expected_outputs"]), _json(task_data["ui_position"]),
+                        _json(task_data["expected_outputs"]), _json(task_data["writes"]),
+                        _json(task_data["done_definition"]), _json(task_data["verify"]), task_data["run_gate"],
+                        _json(task_data["ui_position"]),
                     ),
                 )
             connection.execute(
@@ -130,10 +134,12 @@ class WorkflowRepository:
         data = _dump(workflow)
         with self.database.transaction() as connection:
             cursor = connection.execute(
-                "UPDATE workflows SET goal=?,planner_provider=?,planner_model=?,status=?,graph_json=? WHERE id=?",
+                "UPDATE workflows SET goal=?,planner_provider=?,planner_model=?,status=?,graph_json=?,reviewed_at=?,reviewed_by=?,review_snapshot_hash=?,review_warnings_json=? WHERE id=?",
                 (
                     data["goal"], data["planner_provider"], data["planner_model"],
-                    data["status"], _json(data["graph_json"]), data["id"],
+                    data["status"], _json(data["graph_json"]),
+                    data["reviewed_at"], data["reviewed_by"], data["review_snapshot_hash"],
+                    _json(data["review_warnings"]), data["id"],
                 ),
             )
             if cursor.rowcount != 1:
@@ -143,13 +149,15 @@ class WorkflowRepository:
                 task_data = _dump(task)
                 connection.execute(
                     """INSERT INTO tasks(id,workflow_id,title,description,prompt,agent_type,dependencies_json,
-                    execution_policy_json,retry_policy_json,expected_outputs_json,ui_position_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    execution_policy_json,retry_policy_json,expected_outputs_json,writes_json,done_definition_json,verify_json,run_gate,ui_position_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         task_data["id"], task_data["workflow_id"], task_data["title"], task_data["description"],
                         task_data["prompt"], task_data["agent_type"], _json(task_data["dependencies"]),
                         _json(task_data["execution_policy"]), _json(task_data["retry_policy"]),
-                        _json(task_data["expected_outputs"]), _json(task_data["ui_position"]),
+                        _json(task_data["expected_outputs"]), _json(task_data["writes"]),
+                        _json(task_data["done_definition"]), _json(task_data["verify"]), task_data["run_gate"],
+                        _json(task_data["ui_position"]),
                     ),
                 )
 
@@ -166,6 +174,10 @@ class WorkflowRepository:
                     "execution_policy": json.loads(task["execution_policy_json"]),
                     "retry_policy": json.loads(task["retry_policy_json"]),
                     "expected_outputs": json.loads(task["expected_outputs_json"]),
+                    "writes": json.loads(task["writes_json"]),
+                    "done_definition": json.loads(task["done_definition_json"]),
+                    "verify": json.loads(task["verify_json"]),
+                    "run_gate": task["run_gate"],
                     "ui_position": json.loads(task["ui_position_json"]),
                 }
             )
@@ -175,7 +187,11 @@ class WorkflowRepository:
             {
                 "id": row["id"], "project_id": row["project_id"], "version": row["version"], "goal": row["goal"],
                 "planner_provider": row["planner_provider"], "planner_model": row["planner_model"], "status": row["status"],
-                "graph_json": json.loads(row["graph_json"]), "created_at": row["created_at"], "tasks": tasks,
+                "graph_json": json.loads(row["graph_json"]),
+                "reviewed_at": row["reviewed_at"], "reviewed_by": row["reviewed_by"],
+                "review_snapshot_hash": row["review_snapshot_hash"],
+                "review_warnings": json.loads(row["review_warnings_json"]),
+                "created_at": row["created_at"], "tasks": tasks,
             }
         )
 
@@ -242,6 +258,32 @@ class RunRepository:
             )
             if cursor.rowcount != 1:
                 raise KeyError(attempt.id)
+
+    def list_for_project(
+        self,
+        project_id: str,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> tuple[list[Run], str | None]:
+        query = (
+            "SELECT runs.* FROM runs "
+            "JOIN workflows ON runs.workflow_id = workflows.id "
+            "WHERE workflows.project_id=?"
+        )
+        params: list = [project_id]
+        if cursor:
+            created_at, _, run_id = cursor.partition("~")
+            query += " AND (runs.created_at < ? OR (runs.created_at = ? AND runs.id < ?))"
+            params += [created_at, created_at, run_id]
+        query += " ORDER BY runs.created_at DESC, runs.id DESC LIMIT ?"
+        params.append(limit + 1)
+        rows = self.database.connection.execute(query, params).fetchall()
+        next_cursor = None
+        if len(rows) > limit:
+            rows = rows[:limit]
+            last = rows[-1]
+            next_cursor = f"{last['created_at']}~{last['id']}"
+        return [self._run(row) for row in rows], next_cursor
 
     def latest_attempts(self, run_id: str) -> dict[str, TaskAttempt]:
         return self._latest_attempts(run_id)

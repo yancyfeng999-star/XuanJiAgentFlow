@@ -14,12 +14,17 @@ export default function RunBar() {
   const runProgress = useWorkspaceStore((state) => state.runProgress);
   const nodes = useWorkspaceStore((state) => state.hermesNodes);
   const canExecute = useWorkspaceStore((state) => state.canExecute);
+  const readiness = useWorkspaceStore((state) => state.readiness);
   const executeWorkflow = useWorkspaceStore((state) => state.executeWorkflow);
+  const executing = useWorkspaceStore((state) =>
+    state.pendingActions.some((action) => action.kind === 'execute'));
   const events = useRunEvents(run?.id ?? null);
   const online = nodes.filter((node) => node.status === 'online').length;
   const status = run?.status ?? runStatus;
   const { t, locale } = useI18n();
   const statusKey = `run.status.${status}`;
+  const blockingIssue = readiness?.issues.find((issue) => issue.severity === 'blocking') ?? null;
+  const executeDisabled = !canExecute || readiness?.ready === false;
 
   return (
     <header className="run-bar" aria-label={t('run.bar')}>
@@ -41,14 +46,17 @@ export default function RunBar() {
       <div className="run-actions">
         <ReviewGate />
         <RunControls />
+        {executeDisabled && blockingIssue && (
+          <span className="execute-blocked-reason" role="status">{blockingIssue.title}</span>
+        )}
         <button
           type="button"
           className="primary"
           onClick={() => void executeWorkflow()}
-          disabled={!canExecute}
+          disabled={executeDisabled || executing}
           aria-label={t('run.executeAll')}
         >
-          <Play size={16} />{t('run.executeAll')}
+          <Play size={16} />{executing ? t('run.executing') : t('run.executeAll')}
         </button>
       </div>
     </header>

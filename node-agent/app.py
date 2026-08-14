@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 from pathlib import Path
 
@@ -24,6 +25,11 @@ class OutputPolicyRequest(BaseModel):
     expected: list[str] = Field(default_factory=list)
 
 
+class VerifyStepRequest(BaseModel):
+    kind: str = Field(pattern=r"^(command|file_exists|sha256|manual)$")
+    value: str = Field(min_length=1, max_length=10_000)
+
+
 class CreateTaskRequest(BaseModel):
     instruction: str | None = Field(default=None, min_length=1, max_length=200_000)
     goal: str | None = Field(default=None, min_length=1, max_length=200_000)
@@ -32,6 +38,10 @@ class CreateTaskRequest(BaseModel):
     task_id: str = Field(default="legacy", min_length=1)
     inputs: list[TaskInputRequest] = Field(default_factory=list)
     output_policy: OutputPolicyRequest = Field(default_factory=lambda: OutputPolicyRequest(mode="discover"))
+    writes: list[str] = Field(default_factory=list)
+    done_definition: list[str] = Field(default_factory=list)
+    verify: list[VerifyStepRequest] = Field(default_factory=list)
+    run_gate: str = Field(default="auto", pattern=r"^(auto|review_before_start|review_before_complete)$")
     idempotency_key: str = Field(
         min_length=1,
         max_length=128,
@@ -59,6 +69,8 @@ def create_app(
 
     root = root or _P(os.getenv("XUANJI_NODE_ROOT", "~/.xuanji-node/tasks")).expanduser()
     token = token if token is not None else os.getenv("XUANJI_NODE_TOKEN", "")
+    if not token:
+        raise RuntimeError("XUANJI_NODE_TOKEN 为空：节点代理必须以非空访问令牌启动（fail closed）")
     hermes_url = hermes_url or os.getenv("HERMES_API_URL", "http://127.0.0.1:8642")
     hermes_token = hermes_token or os.getenv("HERMES_API_KEY", "")
     hermes_mode = os.getenv("HERMES_MODE", "api")
@@ -84,7 +96,8 @@ def create_app(
         )
 
     async def authorize(authorization: str | None = Header(default=None)) -> None:
-        if token and authorization != f"Bearer {token}":
+        expected = f"Bearer {token}"
+        if not authorization or not hmac.compare_digest(authorization, expected):
             raise HTTPException(status_code=401, detail={"code": "unauthorized", "message": "节点 Token 无效"})
 
     @app.get("/v1/health")
@@ -209,13 +222,10 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(
-        app,
+        create_app(),
         host=os.getenv("XUANJI_NODE_HOST", "127.0.0.1"),
         port=int(os.getenv("XUANJI_NODE_PORT", "8765")),
     )
-
-
-app = create_app()
 
 if __name__ == "__main__":
     main()

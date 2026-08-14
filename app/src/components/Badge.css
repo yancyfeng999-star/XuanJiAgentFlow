@@ -11,11 +11,11 @@
 
 .badge-sm {
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .badge-icon {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .badge-success { background: var(--success-bg); color: var(--success); }

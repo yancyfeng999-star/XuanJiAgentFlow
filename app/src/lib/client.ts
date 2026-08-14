@@ -32,6 +32,11 @@ export interface ExpectedOutput {
   media_type: string | null;
 }
 
+export interface VerifyStep {
+  kind: 'command' | 'file_exists' | 'sha256' | 'manual';
+  value: string;
+}
+
 export interface WorkflowTask {
   id: string;
   workflow_id: string;
@@ -43,6 +48,10 @@ export interface WorkflowTask {
   execution_policy: ExecutionPolicy;
   retry_policy: RetryPolicy;
   expected_outputs: ExpectedOutput[];
+  writes: string[];
+  done_definition: string[];
+  verify: VerifyStep[];
+  run_gate: 'auto' | 'review_before_start' | 'review_before_complete';
   ui_position: { x: number; y: number };
 }
 
@@ -56,7 +65,40 @@ export interface Workflow {
   status: WorkflowStatus;
   graph_json: Record<string, unknown>;
   tasks: WorkflowTask[];
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_snapshot_hash: string | null;
+  review_warnings: string[];
   created_at: string;
+}
+
+export interface ReviewIssue {
+  code: string;
+  task_id?: string;
+  title: string;
+  message: string;
+}
+
+export interface ReviewTaskSummary {
+  task_id: string;
+  title: string;
+  dependencies: string[];
+  writes: string[];
+  done_definition: string[];
+  verify: VerifyStep[];
+  run_gate: string;
+  matching_node_ids: string[];
+  timeout_seconds: number;
+}
+
+export interface ReviewPrepareResult {
+  snapshot: Record<string, unknown>;
+  snapshot_hash: string;
+  topological_order: string[];
+  task_count: number;
+  tasks: ReviewTaskSummary[];
+  blockers: ReviewIssue[];
+  warnings: ReviewIssue[];
 }
 
 export interface WorkflowUpdate {
@@ -82,6 +124,7 @@ export interface TaskAttempt {
   completed_at: string | null;
   error: Record<string, unknown> | null;
   result_manifest: Record<string, unknown> | null;
+  allowed_actions?: string[];
 }
 
 export interface Run {
@@ -92,6 +135,28 @@ export interface Run {
   completed_at: string | null;
   created_at: string;
   attempts: TaskAttempt[];
+  workflow_version?: number;
+  review_snapshot_hash?: string | null;
+  allowed_actions?: string[];
+}
+
+export interface ProjectRunSummary {
+  id: string;
+  workflow_id: string;
+  workflow_version: number | null;
+  review_snapshot_hash: string | null;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  allowed_actions: string[];
+  task_count: number;
+  task_status_counts: Record<string, number>;
+}
+
+export interface ProjectRunPage {
+  runs: ProjectRunSummary[];
+  next_cursor: string | null;
 }
 
 export interface Artifact {
@@ -128,6 +193,38 @@ export interface HermesNode {
   success_rate: number;
   last_seen_at: string | null;
   credential_configured: boolean | null;
+}
+
+export interface DiagnoseStep {
+  step: 'dns' | 'tcp' | 'ssh' | 'node_agent' | 'hermes' | string;
+  status: 'ok' | 'failed' | 'skipped' | string;
+  message: string;
+}
+
+export interface DiagnoseResult {
+  health?: Record<string, unknown>;
+  capabilities?: Record<string, unknown>;
+  steps?: DiagnoseStep[];
+  node: HermesNode;
+}
+
+export interface HostKeyInfo {
+  algorithm: string;
+  fingerprint: string;
+  known: boolean;
+}
+
+export interface HostKeyInspectResult {
+  node_id: string;
+  host: string;
+  port: number;
+  keys: HostKeyInfo[];
+}
+
+export interface LocalDiscoverResult {
+  found: boolean;
+  path: string | null;
+  version: string | null;
 }
 
 export interface NodeInput {
@@ -179,6 +276,34 @@ export interface PlannerConfigInput {
   credential?: string;
 }
 
+export type ReadinessSeverity = 'blocking' | 'warning' | 'info';
+export type ReadinessAction = 'open_project' | 'open_planner' | 'open_nodes' | 'open_workflow' | 'retry';
+export type ReadinessCheckStatus = 'ready' | 'blocked' | 'warning' | 'unknown';
+
+export interface ReadinessIssue {
+  code: string;
+  severity: ReadinessSeverity;
+  title: string;
+  message: string;
+  action: ReadinessAction;
+  targetId: string | null;
+}
+
+export interface ReadinessResult {
+  ready: boolean;
+  checkedAt: string;
+  projectId: string | null;
+  workflowId: string | null;
+  checks: Record<string, ReadinessCheckStatus>;
+  issues: ReadinessIssue[];
+}
+
+export interface ReadinessQuery {
+  projectId?: string | null;
+  workflowId?: string | null;
+  mode?: 'local' | 'deep';
+}
+
 export interface CoordinatorErrorEnvelope {
   error: {
     code: string;
@@ -213,13 +338,18 @@ export interface CoordinatorClient {
   listProjects(): Promise<Project[]>;
   createProject(input: { name: string; root_path?: string }): Promise<Project>;
   getProject(projectId: string): Promise<Project>;
+  renameProject(projectId: string, name: string): Promise<Project>;
+  deleteProject(projectId: string): Promise<{ deleted: boolean; artifacts_retained: boolean; root_path: string }>;
   getProjectWorkflow(projectId: string): Promise<Workflow | null>;
   plan(projectId: string, input: PlanInput): Promise<Workflow>;
   getWorkflow(workflowId: string): Promise<Workflow>;
   updateWorkflow(workflowId: string, input: WorkflowUpdate): Promise<Workflow>;
   validateWorkflow(workflowId: string): Promise<{ valid: boolean; topological_order: string[] }>;
-  reviewWorkflow(workflowId: string): Promise<Workflow>;
+  prepareReview(workflowId: string): Promise<ReviewPrepareResult>;
+  reviewWorkflow(workflowId: string, input: { snapshot_hash: string; acknowledged_warnings: string[] }): Promise<Workflow>;
+  createRevision(workflowId: string): Promise<Workflow>;
   createRun(workflowId: string): Promise<Run>;
+  listProjectRuns(projectId: string, cursor?: string | null, limit?: number): Promise<ProjectRunPage>;
   startRun(runId: string): Promise<{ id: string; status: 'accepted' }>;
   getRun(runId: string): Promise<Run>;
   pauseRun(runId: string): Promise<Run>;
@@ -233,10 +363,15 @@ export interface CoordinatorClient {
   createNode(input: NodeInput): Promise<HermesNode>;
   updateNode(nodeId: string, input: NodeUpdate): Promise<HermesNode>;
   deleteNode(nodeId: string): Promise<void>;
-  diagnoseNode(nodeId: string): Promise<Record<string, unknown>>;
+  diagnoseNode(nodeId: string): Promise<DiagnoseResult>;
+  discoverLocalNode(): Promise<LocalDiscoverResult>;
+  inspectHostKey(nodeId: string): Promise<HostKeyInspectResult>;
+  confirmHostKey(nodeId: string, input: { algorithm: string; fingerprint: string }): Promise<Record<string, unknown>>;
   provisionNode(nodeId: string, hermesPort: number): Promise<{ node_id: string; completed: boolean; steps: Record<string, unknown>[] }>;
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
+  getReadiness(query?: ReadinessQuery): Promise<ReadinessResult>;
+  createWsTicket(runId: string): Promise<{ ticket: string; expires_in: number }>;
 }
 
 function isErrorEnvelope(value: unknown): value is CoordinatorErrorEnvelope {
@@ -289,13 +424,22 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     listProjects: () => request('/api/projects'),
     createProject: (input) => request('/api/projects', json('POST', input)),
     getProject: (projectId) => request(`/api/projects/${id(projectId)}`),
+    renameProject: (projectId, name) => request(`/api/projects/${id(projectId)}`, json('PATCH', { name })),
+    deleteProject: (projectId) => request(`/api/projects/${id(projectId)}`, json('DELETE')),
     getProjectWorkflow: (projectId) => request(`/api/projects/${id(projectId)}/workflow`),
     plan: (projectId, input) => request(`/api/projects/${id(projectId)}/plan`, json('POST', input)),
     getWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}`),
     updateWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}`, json('PUT', input)),
     validateWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}/validate`, json('POST')),
-    reviewWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}/review`, json('POST')),
+    prepareReview: (workflowId) => request(`/api/workflows/${id(workflowId)}/review/prepare`, json('POST')),
+    reviewWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}/review`, json('POST', input)),
+    createRevision: (workflowId) => request(`/api/workflows/${id(workflowId)}/revisions`, json('POST')),
     createRun: (workflowId) => request(`/api/workflows/${id(workflowId)}/runs`, json('POST')),
+    listProjectRuns: (projectId, cursor = null, limit = 20) => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (cursor) params.set('cursor', cursor);
+      return request(`/api/projects/${id(projectId)}/runs?${params.toString()}`);
+    },
     startRun: (runId) => request(`/api/runs/${id(runId)}/start`, json('POST')),
     getRun: (runId) => request(`/api/runs/${id(runId)}`),
     pauseRun: (runId) => request(`/api/runs/${id(runId)}/pause`, json('POST')),
@@ -311,8 +455,20 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     updateNode: (nodeId, input) => request(`/api/nodes/${id(nodeId)}`, json('PATCH', nodeUpdatePayload(input))),
     deleteNode: (nodeId) => request(`/api/nodes/${id(nodeId)}`, json('DELETE')),
     diagnoseNode: (nodeId) => request(`/api/nodes/${id(nodeId)}/diagnose`, json('POST')),
+    discoverLocalNode: () => request('/api/nodes/local/discover', json('POST')),
+    inspectHostKey: (nodeId) => request(`/api/nodes/${id(nodeId)}/host-key/inspect`, json('POST')),
+    confirmHostKey: (nodeId, input) => request(`/api/nodes/${id(nodeId)}/host-key/confirm`, json('POST', input)),
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),
+    createWsTicket: (runId) => request('/api/session/ws-tickets', json('POST', { run_id: runId })),
+    getReadiness: (query = {}) => {
+      const params = new URLSearchParams();
+      if (query.projectId) params.set('project_id', query.projectId);
+      if (query.workflowId) params.set('workflow_id', query.workflowId);
+      if (query.mode) params.set('mode', query.mode);
+      const suffix = params.size ? `?${params.toString()}` : '';
+      return request(`/api/readiness${suffix}`);
+    },
   };
 }

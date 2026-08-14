@@ -7,11 +7,15 @@ import {
   nodeUpdatePayload,
   type CoordinatorClient,
   type HermesNode,
+  type LocalDiscoverResult,
   type NodeInput,
   type PlanInput,
   type PlannerConfig,
   type PlannerConfigInput,
   type Project,
+  type ProjectRunSummary,
+  type ReadinessResult,
+  type ReviewPrepareResult,
   type Run,
   type TaskAttempt,
   type Workflow,
@@ -30,7 +34,34 @@ export interface WorkspaceError {
 }
 
 export type WorkspacePanel = 'workflow' | 'nodes' | 'settings';
-export type RunStatus = 'idle' | 'accepted' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'pending' | 'success' | 'cancelling';
+
+export type PendingAction =
+  | { kind: 'create_project'; key: 'new' }
+  | { kind: 'rename_project' | 'delete_project'; key: string }
+  | { kind: 'plan' | 'review' | 'execute'; key: string }
+  | { kind: 'pause' | 'resume' | 'cancel'; key: string }
+  | { kind: 'retry_task' | 'skip_task'; key: string }
+  | { kind: 'save_node' | 'diagnose_node' | 'provision_node' | 'delete_node'; key: string }
+  | { kind: 'save_planner'; key: 'planner' };
+
+export type PendingActionKind = PendingAction['kind'];
+
+function pendingKey(action: PendingAction): string {
+  return `${action.kind}:${action.key}`;
+}
+export type RunStatus =
+  | 'idle'
+  | 'pending'
+  | 'running'
+  | 'paused'
+  | 'cancelling'
+  | 'cancelled'
+  | 'success'
+  | 'success_with_warnings'
+  | 'failed'
+  | 'blocked';
+
+export const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'success', 'success_with_warnings', 'failed']);
 
 type TaskChanges = Partial<Omit<WorkflowTask, 'id' | 'workflow_id' | 'dependencies'>>;
 
@@ -49,15 +80,19 @@ export interface WorkspaceState {
   project: Project | null;
   workflow: Workflow | null;
   run: Run | null;
+  runHistory: ProjectRunSummary[];
+  runHistoryCursor: string | null;
   runStatus: RunStatus;
   runProgress: number;
   lastEventId: number;
   taskAttempts: Record<string, TaskAttempt>;
   hermesNodes: HermesNode[];
+  localDiscover: LocalDiscoverResult | null;
   selectedTaskId: string | null;
   activePanel: WorkspacePanel;
   plannerConfig: PlannerConfig;
-  loading: boolean;
+  readiness: ReadinessResult | null;
+  pendingActions: PendingAction[];
   error: WorkspaceError | null;
   canExecute: boolean;
   setCoordinatorBaseUrl: (baseUrl: string, sessionToken?: string | null) => void;
@@ -67,9 +102,12 @@ export interface WorkspaceState {
   setRunProgress: (progress: number) => void;
   applyRunMonitor: (update: MonitorUpdate) => void;
   setControlError: (error: WorkspaceError | null) => void;
+  isPending: (kind: PendingActionKind, key?: string) => boolean;
   clearError: () => void;
   loadProjects: () => Promise<void>;
   createProject: (name: string, rootPath?: string) => Promise<void>;
+  renameProject: (projectId: string, name: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   loadProject: (projectId: string) => Promise<void>;
   plan: (input: PlanInput) => Promise<void>;
   updateTask: (taskId: string, changes: TaskChanges) => Promise<void>;
@@ -78,7 +116,9 @@ export interface WorkspaceState {
   connectTasks: (sourceTaskId: string, targetTaskId: string) => Promise<void>;
   disconnectTasks: (sourceTaskId: string, targetTaskId: string) => Promise<void>;
   disconnectTaskEdges: (edges: Array<{ source: string; target: string }>) => Promise<void>;
-  reviewWorkflow: () => Promise<void>;
+  prepareReview: () => Promise<ReviewPrepareResult | null>;
+  reviewWorkflow: (snapshotHash: string, acknowledgedWarnings: string[]) => Promise<void>;
+  createRevision: () => Promise<void>;
   executeWorkflow: () => Promise<void>;
   pauseRun: () => Promise<void>;
   resumeRun: () => Promise<void>;
@@ -86,13 +126,17 @@ export interface WorkspaceState {
   retryTask: (taskId: string) => Promise<void>;
   skipTask: (taskId: string) => Promise<void>;
   refreshRun: () => Promise<void>;
+  loadRunHistory: (append?: boolean) => Promise<void>;
+  openRun: (runId: string) => Promise<void>;
   loadNodes: () => Promise<void>;
   saveNode: (input: NodeInput) => Promise<void>;
   diagnoseNode: (nodeId: string) => Promise<void>;
+  discoverLocalNode: () => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
   provisionNode: (nodeId: string, hermesPort: number) => Promise<void>;
   loadSettings: () => Promise<void>;
   savePlannerConfig: (input: PlannerConfigInput) => Promise<void>;
+  loadReadiness: (mode?: 'local' | 'deep') => Promise<void>;
   resetWorkspace: () => void;
 }
 
@@ -110,39 +154,37 @@ const initialState = {
   project: null as Project | null,
   workflow: null as Workflow | null,
   run: null as Run | null,
+  runHistory: [] as ProjectRunSummary[],
+  runHistoryCursor: null as string | null,
   runStatus: 'idle' as RunStatus,
   runProgress: 0,
   lastEventId: 0,
   taskAttempts: {} as Record<string, TaskAttempt>,
   hermesNodes: [] as HermesNode[],
+  localDiscover: null as LocalDiscoverResult | null,
   selectedTaskId: null as string | null,
   activePanel: 'workflow' as WorkspacePanel,
   plannerConfig: emptyPlannerConfig,
-  loading: false,
+  readiness: null as ReadinessResult | null,
+  pendingActions: [] as PendingAction[],
   error: null as WorkspaceError | null,
   canExecute: false,
 };
 
-function toRunStatus(status: string | undefined | null): RunStatus {
+function asRunStatus(status: string | undefined | null): RunStatus {
   switch (status) {
     case 'pending':
-      return 'accepted';
-    case 'success':
-      return 'completed';
-    case 'cancelling':
-      return 'cancelled';
-    case 'blocked':
-      return 'failed';
-    case 'accepted':
     case 'running':
     case 'paused':
-    case 'completed':
-    case 'failed':
+    case 'cancelling':
     case 'cancelled':
-    case 'idle':
+    case 'success':
+    case 'success_with_warnings':
+    case 'failed':
+    case 'blocked':
       return status;
     default:
-      return (status as RunStatus) || 'idle';
+      return 'idle';
   }
 }
 
@@ -210,8 +252,19 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
     let selectionGeneration = 0;
     let workflowRequest = 0;
     let nodesRequest = 0;
+    let readinessRequest = 0;
     const nodeRequests = new Map<string, number>();
-    const fail = (error: unknown) => set({ error: workspaceError(error), loading: false });
+    const fail = (error: unknown) => set({ error: workspaceError(error) });
+    const begin = (action: PendingAction): boolean => {
+      if (get().pendingActions.some((item) => pendingKey(item) === pendingKey(action))) return false;
+      set((state) => ({ pendingActions: [...state.pendingActions, action] }));
+      return true;
+    };
+    const end = (action: PendingAction) => {
+      set((state) => ({
+        pendingActions: state.pendingActions.filter((item) => pendingKey(item) !== pendingKey(action)),
+      }));
+    };
     const currentWorkspace = (snapshot: number) => snapshot === generation;
     const currentSelection = (workspace: number, selection: number, projectId: string, workflowId?: string) => {
       const state = get();
@@ -237,14 +290,14 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         return;
       }
       if (!projectId) return;
-      set({ loading: true, error: null });
+      set({ error: null });
       try {
         const updated = await client.updateWorkflow(workflow.id, {
           tasks,
           graph_json: workflow.graph_json,
         });
         if (request === workflowRequest && currentSelection(workspace, selection, projectId, workflow.id)) {
-          set({ workflow: updated, loading: false, canExecute: updated.status === 'reviewed' });
+          set({ workflow: updated, canExecute: updated.status === 'reviewed' });
         }
       } catch (error) {
         if (request === workflowRequest && currentSelection(workspace, selection, projectId, workflow.id)) fail(error);
@@ -265,6 +318,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         selectionGeneration += 1;
         workflowRequest += 1;
         nodesRequest += 1;
+        readinessRequest += 1;
         nodeRequests.clear();
         workspaceClient = createApiClient(normalized, coordinatorSessionToken);
         set({
@@ -274,6 +328,8 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           project: null,
           workflow: null,
           run: null,
+          runHistory: [],
+          runHistoryCursor: null,
           lastEventId: 0,
           taskAttempts: {},
           runStatus: 'idle',
@@ -281,7 +337,8 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           hermesNodes: [],
           selectedTaskId: null,
           plannerConfig: { ...emptyPlannerConfig },
-          loading: false,
+          readiness: null,
+          pendingActions: [],
           error: null,
           canExecute: false,
         });
@@ -292,7 +349,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       setRunProgress: (runProgress) => set({ runProgress: Math.max(0, Math.min(100, runProgress)) }),
       applyRunMonitor: (update) => set((state) => ({
         lastEventId: update.lastEventId ?? state.lastEventId,
-        runStatus: update.runStatus ? toRunStatus(update.runStatus) : state.runStatus,
+        runStatus: update.runStatus ? asRunStatus(update.runStatus) : state.runStatus,
         runProgress: update.runProgress === undefined
           ? state.runProgress
           : Math.max(0, Math.min(100, update.runProgress)),
@@ -303,14 +360,17 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       })),
       setControlError: (error) => set({ error }),
       clearError: () => set({ error: null }),
+      isPending: (kind, key) => get().pendingActions.some(
+        (action) => action.kind === kind && (key === undefined || action.key === key),
+      ),
       loadProjects: async () => {
         const client = getClient();
         const workspace = generation;
         const request = ++workspaceRequest;
-        set({ loading: true, error: null });
+        set({ error: null });
         try {
           const projects = await client.listProjects();
-          if (currentWorkspace(workspace) && request === workspaceRequest) set({ projects, loading: false });
+          if (currentWorkspace(workspace) && request === workspaceRequest) set({ projects });
         } catch (error) {
           if (currentWorkspace(workspace) && request === workspaceRequest) fail(error);
         }
@@ -319,14 +379,57 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const client = getClient();
         const workspace = generation;
         const request = ++workspaceRequest;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'create_project', key: 'new' };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const project = await client.createProject({ name, ...(rootPath ? { root_path: rootPath } : {}) });
           if (!currentWorkspace(workspace) || request !== workspaceRequest) return;
-          set((state) => ({ projects: [...state.projects, project], loading: false }));
+          set((state) => ({ projects: [...state.projects, project] }));
           await get().loadProject(project.id);
         } catch (error) {
           if (currentWorkspace(workspace) && request === workspaceRequest) fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      renameProject: async (projectId, name) => {
+        const client = getClient();
+        const workspace = generation;
+        const pending: PendingAction = { kind: 'rename_project', key: projectId };
+        if (!begin(pending)) return;
+        set({ error: null });
+        try {
+          const updated = await client.renameProject(projectId, name);
+          if (!currentWorkspace(workspace)) return;
+          set((state) => ({
+            projects: state.projects.map((item) => (item.id === projectId ? updated : item)),
+            project: state.project?.id === projectId ? updated : state.project,
+          }));
+        } catch (error) {
+          if (currentWorkspace(workspace)) fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      deleteProject: async (projectId) => {
+        const client = getClient();
+        const workspace = generation;
+        const pending: PendingAction = { kind: 'delete_project', key: projectId };
+        if (!begin(pending)) return;
+        set({ error: null });
+        try {
+          await client.deleteProject(projectId);
+          if (!currentWorkspace(workspace)) return;
+          const projects = get().projects.filter((item) => item.id !== projectId);
+          set({ projects });
+          if (get().project?.id === projectId) {
+            set({ project: null, workflow: null, run: null, runHistory: [], runHistoryCursor: null, canExecute: false });
+          }
+        } catch (error) {
+          if (currentWorkspace(workspace)) fail(error);
+        } finally {
+          end(pending);
         }
       },
       loadProject: async (projectId) => {
@@ -336,11 +439,12 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const selection = ++selectionGeneration;
         workflowRequest += 1;
         set({
-          loading: true,
           error: null,
           selectedTaskId: null,
           workflow: null,
           run: null,
+          runHistory: [],
+          runHistoryCursor: null,
           lastEventId: 0,
           taskAttempts: {},
           runStatus: 'idle',
@@ -348,12 +452,31 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           canExecute: false,
         });
         try {
-          const [project, workflow] = await Promise.all([
+          const [project, workflow, runPage] = await Promise.all([
             client.getProject(projectId),
             client.getProjectWorkflow(projectId),
+            client.listProjectRuns(projectId),
           ]);
           if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) {
-            set({ project, workflow, loading: false, canExecute: workflow?.status === 'reviewed' });
+            set({
+              project,
+              workflow,
+              canExecute: workflow?.status === 'reviewed',
+              runHistory: runPage.runs,
+              runHistoryCursor: runPage.next_cursor,
+            });
+            const active = runPage.runs.find((item) => !TERMINAL_RUN_STATUSES.has(item.status));
+            if (active) {
+              const restored = await client.getRun(active.id);
+              if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) {
+                set({
+                  run: restored,
+                  runStatus: asRunStatus(restored.status),
+                  taskAttempts: attemptsByTask(restored.attempts ?? []),
+                });
+              }
+            }
+            void get().loadReadiness();
           }
         } catch (error) {
           if (currentWorkspace(workspace) && request === workspaceRequest && selection === selectionGeneration) fail(error);
@@ -369,19 +492,23 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           set({ error: { code: 'project_required', message: storeText('store.projectRequired'), details: {} } });
           return;
         }
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'plan', key: project.id };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const workflow = await client.plan(project.id, input);
           if (!currentSelection(workspace, selection, project.id) || request !== workflowRequest) return;
           set((state) => ({
             workflow,
             project: state.project?.id === project.id ? { ...state.project, active_workflow_version: workflow.version } : state.project,
-            loading: false,
             selectedTaskId: null,
             canExecute: false,
           }));
+          void get().loadReadiness();
         } catch (error) {
           if (currentSelection(workspace, selection, project.id) && request === workflowRequest) fail(error);
+        } finally {
+          end(pending);
         }
       },
       updateTask: async (taskId, changes) => {
@@ -414,6 +541,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           },
           retry_policy: { max_attempts: 3, delay_seconds: 1 },
           expected_outputs: [],
+          writes: [],
+          done_definition: [],
+          verify: [],
+          run_gate: 'auto',
           ui_position: { x: 80 + workflow.tasks.length * 40, y: 80 + workflow.tasks.length * 40 },
         }]);
       },
@@ -462,7 +593,17 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         });
         await persistTasks(tasks);
       },
-      reviewWorkflow: async () => {
+      prepareReview: async () => {
+        const workflow = get().workflow;
+        if (!workflow) return null;
+        try {
+          return await getClient().prepareReview(workflow.id);
+        } catch (error) {
+          fail(error);
+          return null;
+        }
+      },
+      reviewWorkflow: async (snapshotHash, acknowledgedWarnings) => {
         const client = getClient();
         const workspace = generation;
         const selection = selectionGeneration;
@@ -470,16 +611,49 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const projectId = get().project?.id;
         const workflow = get().workflow;
         if (!projectId || !workflow) return;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'review', key: workflow.id };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
-          await client.validateWorkflow(workflow.id);
-          if (!currentSelection(workspace, selection, projectId, workflow.id) || request !== workflowRequest) return;
-          const reviewed = await client.reviewWorkflow(workflow.id);
+          const reviewed = await client.reviewWorkflow(workflow.id, {
+            snapshot_hash: snapshotHash,
+            acknowledged_warnings: acknowledgedWarnings,
+          });
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) {
-            set({ workflow: reviewed, loading: false, canExecute: reviewed.status === 'reviewed' });
+            set({ workflow: reviewed, canExecute: reviewed.status === 'reviewed' });
+            void get().loadReadiness();
           }
         } catch (error) {
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) fail(error);
+          throw error;
+        } finally {
+          end(pending);
+        }
+      },
+      createRevision: async () => {
+        const client = getClient();
+        const workspace = generation;
+        const selection = selectionGeneration;
+        const request = ++workflowRequest;
+        const projectId = get().project?.id;
+        const workflow = get().workflow;
+        if (!projectId || !workflow || workflow.status !== 'reviewed') return;
+        set({ error: null });
+        try {
+          const revision = await client.createRevision(workflow.id);
+          if (currentSelection(workspace, selection, projectId) && request === workflowRequest) {
+            set({
+              workflow: revision,
+              selectedTaskId: null,
+              canExecute: false,
+              project: get().project
+                ? { ...get().project!, active_workflow_version: revision.version }
+                : get().project,
+            });
+            void get().loadReadiness();
+          }
+        } catch (error) {
+          if (currentSelection(workspace, selection, projectId) && request === workflowRequest) fail(error);
         }
       },
       executeWorkflow: async () => {
@@ -493,124 +667,143 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           set({ error: { code: 'workflow_not_reviewed', message: storeText('store.notReviewed'), details: {} } });
           return;
         }
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'execute', key: workflow.id };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const run = await client.createRun(workflow.id);
           if (!currentSelection(workspace, selection, projectId, workflow.id) || request !== workflowRequest) return;
           await client.startRun(run.id);
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) {
             set({
-              run: { ...run, status: 'accepted' },
-              runStatus: 'accepted',
+              run,
+              runStatus: asRunStatus(run.status),
               runProgress: 0,
               lastEventId: 0,
               taskAttempts: attemptsByTask(run.attempts ?? []),
-              loading: false,
             });
+            void get().loadRunHistory();
           }
         } catch (error) {
           if (currentSelection(workspace, selection, projectId, workflow.id) && request === workflowRequest) fail(error);
+        } finally {
+          end(pending);
         }
       },
       pauseRun: async () => {
         const client = getClient();
         const runId = get().run?.id;
         if (!runId) return;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'pause', key: runId };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const updated = await client.pauseRun(runId);
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
-              loading: false,
             });
           }
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        } finally {
+          end(pending);
         }
       },
       resumeRun: async () => {
         const client = getClient();
         const runId = get().run?.id;
         if (!runId) return;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'resume', key: runId };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const updated = await client.resumeRun(runId);
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
-              loading: false,
             });
           }
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        } finally {
+          end(pending);
         }
       },
       cancelRun: async () => {
         const client = getClient();
         const runId = get().run?.id;
         if (!runId) return;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'cancel', key: runId };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const updated = await client.cancelRun(runId);
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
-              loading: false,
             });
           }
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        } finally {
+          end(pending);
         }
       },
       retryTask: async (taskId) => {
         const client = getClient();
         const runId = get().run?.id;
         if (!runId) return;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'retry_task', key: taskId };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const attempt = await client.retryTask(runId, taskId);
           if (get().run?.id === runId) {
             set((state) => ({
               taskAttempts: { ...state.taskAttempts, [taskId]: attempt },
-              loading: false,
             }));
             const refreshed = await client.getRun(runId);
             if (get().run?.id === runId) {
               set({
                 run: refreshed,
-                runStatus: toRunStatus(refreshed.status),
+                runStatus: asRunStatus(refreshed.status),
                 taskAttempts: attemptsByTask(refreshed.attempts ?? []),
               });
             }
           }
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        } finally {
+          end(pending);
         }
       },
       skipTask: async (taskId) => {
         const client = getClient();
         const runId = get().run?.id;
         if (!runId) return;
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'skip_task', key: taskId };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const updated = await client.skipTask(runId, taskId);
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
-              loading: false,
             });
           }
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        } finally {
+          end(pending);
         }
       },
       refreshRun: async () => {
@@ -622,12 +815,43 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           if (get().run?.id === runId) {
             set({
               run: updated,
-              runStatus: toRunStatus(updated.status),
+              runStatus: asRunStatus(updated.status),
               taskAttempts: attemptsByTask(updated.attempts ?? []),
             });
           }
+          if (TERMINAL_RUN_STATUSES.has(updated.status)) void get().loadRunHistory();
         } catch (error) {
           if (get().run?.id === runId) fail(error);
+        }
+      },
+      loadRunHistory: async (append = false) => {
+        const client = getClient();
+        const projectId = get().project?.id;
+        if (!projectId) return;
+        const cursor = append ? get().runHistoryCursor : null;
+        try {
+          const page = await client.listProjectRuns(projectId, cursor);
+          set((state) => ({
+            runHistory: append ? [...state.runHistory, ...page.runs] : page.runs,
+            runHistoryCursor: page.next_cursor,
+          }));
+        } catch (error) {
+          fail(error);
+        }
+      },
+      openRun: async (runId) => {
+        const client = getClient();
+        try {
+          const run = await client.getRun(runId);
+          set({
+            run,
+            runStatus: asRunStatus(run.status),
+            taskAttempts: attemptsByTask(run.attempts ?? []),
+            lastEventId: 0,
+            runProgress: 0,
+          });
+        } catch (error) {
+          fail(error);
         }
       },
       loadNodes: async () => {
@@ -636,7 +860,10 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const request = ++nodesRequest;
         try {
           const hermesNodes = await client.listNodes();
-          if (currentWorkspace(workspace) && request === nodesRequest) set({ hermesNodes, error: null });
+          if (currentWorkspace(workspace) && request === nodesRequest) {
+            set({ hermesNodes, error: null });
+            void get().loadReadiness();
+          }
         } catch (error) {
           if (currentWorkspace(workspace) && request === nodesRequest) fail(error);
         }
@@ -647,7 +874,9 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const request = (nodeRequests.get(input.id) ?? 0) + 1;
         nodeRequests.set(input.id, request);
         const existing = get().hermesNodes.some((node) => node.id === input.id);
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'save_node', key: input.id };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           const node = existing
             ? await client.updateNode(input.id, nodeUpdatePayload(input))
@@ -659,20 +888,34 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
               hermesNodes: index >= 0
                 ? state.hermesNodes.map((item) => item.id === node.id ? node : item)
                 : [...state.hermesNodes, node],
-              loading: false,
             };
           });
+          void get().loadReadiness();
         } catch (error) {
           if (currentWorkspace(workspace) && nodeRequests.get(input.id) === request) fail(error);
+        } finally {
+          end(pending);
         }
       },
       diagnoseNode: async (nodeId) => {
         const client = getClient();
-        set({ loading: true, error: null });
+        const pending: PendingAction = { kind: 'diagnose_node', key: nodeId };
+        if (!begin(pending)) return;
+        set({ error: null });
         try {
           await client.diagnoseNode(nodeId);
           const hermesNodes = await client.listNodes();
-          set({ hermesNodes, loading: false });
+          set({ hermesNodes });
+        } catch (error) {
+          fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      discoverLocalNode: async () => {
+        try {
+          const localDiscover = await getClient().discoverLocalNode();
+          set({ localDiscover });
         } catch (error) {
           fail(error);
         }
@@ -682,13 +925,18 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const workspace = generation;
         const request = (nodeRequests.get(nodeId) ?? 0) + 1;
         nodeRequests.set(nodeId, request);
+        const pending: PendingAction = { kind: 'delete_node', key: nodeId };
+        if (!begin(pending)) return;
         try {
           await client.deleteNode(nodeId);
           if (currentWorkspace(workspace) && nodeRequests.get(nodeId) === request) {
             set((state) => ({ hermesNodes: state.hermesNodes.filter((node) => node.id !== nodeId), error: null }));
+            void get().loadReadiness();
           }
         } catch (error) {
           if (currentWorkspace(workspace) && nodeRequests.get(nodeId) === request) fail(error);
+        } finally {
+          end(pending);
         }
       },
       provisionNode: async (nodeId, hermesPort) => {
@@ -696,6 +944,8 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         const workspace = generation;
         const request = (nodeRequests.get(nodeId) ?? 0) + 1;
         nodeRequests.set(nodeId, request);
+        const pending: PendingAction = { kind: 'provision_node', key: nodeId };
+        if (!begin(pending)) return;
         try {
           const result = await client.provisionNode(nodeId, hermesPort);
           if (!currentWorkspace(workspace) || nodeRequests.get(nodeId) !== request) return;
@@ -712,6 +962,8 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
           set({ error: null });
         } catch (error) {
           if (currentWorkspace(workspace) && nodeRequests.get(nodeId) === request) fail(error);
+        } finally {
+          end(pending);
         }
       },
       loadSettings: async () => {
@@ -727,12 +979,36 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
       },
       savePlannerConfig: async (input) => {
         const request = ++settingsRequest;
+        const pending: PendingAction = { kind: 'save_planner', key: 'planner' };
+        if (!begin(pending)) return;
         try {
           await getClient().setPlannerConfig(input);
           const plannerConfig = await getClient().getPlannerConfig();
-          if (request === settingsRequest) set({ plannerConfig, error: null });
+          if (request === settingsRequest) {
+            set({ plannerConfig, error: null });
+            void get().loadReadiness();
+          }
         } catch (error) {
           if (request === settingsRequest) fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      loadReadiness: async (mode = 'local') => {
+        const client = getClient();
+        const workspace = generation;
+        const request = ++readinessRequest;
+        const projectId = get().project?.id ?? null;
+        const workflowId = get().workflow?.id ?? null;
+        try {
+          const readiness = await client.getReadiness({ projectId, workflowId, mode });
+          if (currentWorkspace(workspace) && request === readinessRequest) {
+            set({ readiness, canExecute: readiness.ready && get().workflow?.status === 'reviewed' });
+          }
+        } catch {
+          if (currentWorkspace(workspace) && request === readinessRequest) {
+            set({ readiness: null });
+          }
         }
       },
       resetWorkspace: () => {
@@ -742,6 +1018,7 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         selectionGeneration += 1;
         workflowRequest += 1;
         nodesRequest += 1;
+        readinessRequest += 1;
         nodeRequests.clear();
         set({ ...initialState, plannerConfig: { ...emptyPlannerConfig } });
       },

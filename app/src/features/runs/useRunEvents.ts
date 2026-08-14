@@ -5,7 +5,6 @@ import {
   applyRunEvent,
   computeRunProgress,
   createInitialRunEventState,
-  mapRunStatus,
   type RunEvent,
   type RunEventState,
 } from './runEventState';
@@ -15,14 +14,29 @@ export interface UseRunEventsResult {
   connected: boolean;
 }
 
-function toWebSocketUrl(baseUrl: string, runId: string, lastEventId: number, sessionToken: string | null): string {
+function toWebSocketUrl(baseUrl: string, runId: string, lastEventId: number, ticket: string | null): string {
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = `/ws/runs/${encodeURIComponent(runId)}`;
   url.searchParams.set('last_event_id', String(lastEventId));
-  if (sessionToken) url.searchParams.set('session_token', sessionToken);
+  if (ticket) url.searchParams.set('ticket', ticket);
   url.hash = '';
   return url.toString();
+}
+
+async function issueTicket(baseUrl: string, runId: string, sessionToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/session/ws-tickets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Xuanji-Session': sessionToken },
+      body: JSON.stringify({ run_id: runId }),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as { ticket?: string };
+    return typeof payload.ticket === 'string' ? payload.ticket : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseEvent(raw: unknown): RunEvent | null {
@@ -42,25 +56,32 @@ function parseEvent(raw: unknown): RunEvent | null {
   };
 }
 
+const QUIESCENT_STATUSES = new Set(['paused', 'blocked', 'success', 'success_with_warnings', 'failed', 'cancelled']);
+
 function syncWorkspace(state: RunEventState) {
   const store = useWorkspaceStore.getState();
-  const mapped = mapRunStatus(state.runStatus);
   const taskIds = store.workflow?.tasks.map((task) => task.id) ?? Object.keys(state.taskAttempts);
   const progress = computeRunProgress(taskIds, state.taskAttempts);
   const currentRun = store.run;
+  const previousStatus = currentRun?.status;
+  const nextStatus = state.runStatus ?? currentRun?.status;
   store.applyRunMonitor({
     lastEventId: state.lastEventId,
-    runStatus: mapped,
+    runStatus: nextStatus,
     runProgress: progress,
     taskAttempts: state.taskAttempts,
     run: currentRun
       ? {
           ...currentRun,
-          status: state.runStatus ?? currentRun.status,
+          status: nextStatus ?? currentRun.status,
           attempts: Object.values(state.taskAttempts),
         }
       : currentRun,
   });
+  // 进入静止态后用服务端快照收敛，恢复 allowed_actions 等权威字段
+  if (nextStatus && nextStatus !== previousStatus && QUIESCENT_STATUSES.has(nextStatus)) {
+    void store.refreshRun();
+  }
 }
 
 export function useRunEvents(runId: string | null): UseRunEventsResult {
@@ -88,10 +109,17 @@ export function useRunEvents(runId: string | null): UseRunEventsResult {
       }
     };
 
-    const connect = () => {
+    const connect = async () => {
       if (disposed) return;
       clearTimer();
-      const url = toWebSocketUrl(baseUrl, runId, stateRef.current.lastEventId, sessionToken);
+      // 长期会话令牌不进入 URL：先换取一次性短期票据
+      const ticket = sessionToken ? await issueTicket(baseUrl, runId, sessionToken) : null;
+      if (disposed) return;
+      if (sessionToken && !ticket) {
+        reconnectTimer.current = setTimeout(() => void connect(), 500);
+        return;
+      }
+      const url = toWebSocketUrl(baseUrl, runId, stateRef.current.lastEventId, ticket);
       socket = new WebSocket(url);
 
       socket.onopen = () => {
@@ -123,11 +151,11 @@ export function useRunEvents(runId: string | null): UseRunEventsResult {
       socket.onclose = () => {
         if (disposed) return;
         setConnected(false);
-        reconnectTimer.current = setTimeout(connect, 250);
+        reconnectTimer.current = setTimeout(() => void connect(), 250);
       };
     };
 
-    connect();
+    void connect();
 
     return () => {
       disposed = true;

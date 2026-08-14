@@ -127,21 +127,15 @@ test.describe('recovery and control paths', () => {
     });
     expect(updated.ok()).toBeTruthy();
     await apiReview(request, workflow.id);
-    const run = await apiCreateRun(request, workflow.id);
-    await apiStart(request, run.id);
-    const finished = await waitForRun(
-      request,
-      run.id,
-      ['blocked', 'failed', 'success'],
-      15_000,
+    // 固定离线节点时，服务端就绪门禁必须拒绝创建 Run，而不是静默派发后谎报成功
+    const createResponse = await request.post(
+      `${coordinatorUrl()}/api/workflows/${workflow.id}/runs`,
     );
-    if (finished.status === 'success') {
-      const attempts = finished.attempts as Array<{ node_id: string }>;
-      // Scheduler ignored fixed mode — still must not assign offline node as success.
-      expect(attempts.every((a) => a.node_id !== offlineId)).toBeTruthy();
-    } else {
-      expect(['blocked', 'failed']).toContain(String(finished.status));
-    }
+    expect(createResponse.status()).toBe(409);
+    const error = await createResponse.json();
+    expect(error.error.code).toBe('run_not_ready');
+    const codes = error.error.details.issues.map((issue: { code: string }) => issue.code);
+    expect(codes).toContain('task_without_matching_node');
   });
 
   test('websocket reconnect replays with strictly increasing event_id', async ({ page }) => {
@@ -164,7 +158,17 @@ test.describe('recovery and control paths', () => {
           body: JSON.stringify({ goal: 'ws replay', context: 'e2e' }),
         })
       ).json();
-      await fetch(`${coordinator}/api/workflows/${workflow.id}/review`, { method: 'POST' });
+      const prepared = await (
+        await fetch(`${coordinator}/api/workflows/${workflow.id}/review/prepare`, { method: 'POST' })
+      ).json();
+      await fetch(`${coordinator}/api/workflows/${workflow.id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snapshot_hash: prepared.snapshot_hash,
+          acknowledged_warnings: [...new Set(prepared.warnings.map((w) => w.code))],
+        }),
+      });
       const run = await (
         await fetch(`${coordinator}/api/workflows/${workflow.id}/runs`, { method: 'POST' })
       ).json();
@@ -269,5 +273,27 @@ test.describe('recovery and control paths', () => {
     // RecoveryService is exercised by backend integration on process restart;
     // here we assert the durable preconditions the supervisor relies on.
     expect(fs.statSync(path.join(meta!.data_dir, 'coordinator.db')).size).toBeGreaterThan(0);
+  });
+
+  test('switching back to a project restores its latest non-terminal run', async ({ page, request }) => {
+    const project = await apiCreateProject(request, `E2E Restore ${Date.now()}`);
+    const workflow = await apiPlan(request, project.id);
+    await apiReview(request, workflow.id);
+    const run = await apiCreateRun(request, workflow.id);
+
+    await page.goto('/');
+    await ensureWorkspaceReady(page);
+    await page.locator('.project-rail select').selectOption(project.id);
+    await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });
+
+    const other = await apiCreateProject(request, `E2E Restore Other ${Date.now()}`);
+    await page.reload();
+    await ensureWorkspaceReady(page);
+    await page.locator('.project-rail select').selectOption(other.id);
+    await expect(page.getByLabel('顶部运行栏').getByText('未运行')).toBeVisible();
+
+    await page.locator('.project-rail select').selectOption(project.id);
+    await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel('运行历史')).toBeVisible();
   });
 });

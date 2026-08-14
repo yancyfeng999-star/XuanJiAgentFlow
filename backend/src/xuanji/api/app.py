@@ -15,7 +15,12 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from xuanji.artifacts.manager import ArtifactManager
-from xuanji.credentials import LocalCredentialStore
+from xuanji.credentials import (
+    CredentialStore,
+    KeychainCredentialStore,
+    LocalCredentialStore,
+    migrate_credentials,
+)
 from xuanji.domain.enums import RunStatus
 from xuanji.domain.models import HermesNode
 from xuanji.execution import ExecutionManager, RecoveryService
@@ -24,6 +29,8 @@ from xuanji.planner.providers import OpenAIChatCompletionsProvider
 from xuanji.planner.service import PlannerService
 from xuanji.provisioning import ProvisioningService
 from xuanji.provisioning.ssh import app_known_hosts_path, ensure_known_hosts_file
+from xuanji.readiness import ReadinessService
+from xuanji.session_tickets import SessionTicketStore
 from xuanji.storage.database import Database
 from xuanji.storage.repositories import (
     ArtifactRepository,
@@ -42,7 +49,7 @@ class Planner(Protocol):
     async def plan(self, project_id: str, goal: str, context: str, constraints: dict): ...
 
 
-PlannerFactory = Callable[[dict[str, str], LocalCredentialStore], Planner]
+PlannerFactory = Callable[[dict[str, str], CredentialStore], Planner]
 NodeClientFactory = Callable[[str, str], NodeClient]
 
 
@@ -51,6 +58,7 @@ class CoordinatorConfig:
     data_dir: Path
     poll_interval: float = 1.0
     session_token: str | None = None
+    credential_backend: str = "file"
 
     @property
     def db_path(self) -> Path:
@@ -73,7 +81,7 @@ class CoordinatorConfig:
 class Services:
     config: CoordinatorConfig
     database: Database
-    credentials: LocalCredentialStore
+    credentials: CredentialStore
     planner: Planner | None
     planner_factory: PlannerFactory
     artifacts: ArtifactManager
@@ -89,6 +97,8 @@ class Services:
     app_config: ConfigRepository
     node_clients: dict[str, NodeClient]
     node_client_factory: NodeClientFactory
+    readiness: ReadinessService | None = None
+    session_tickets: SessionTicketStore = field(default_factory=SessionTicketStore)
     background_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
 
     @staticmethod
@@ -178,7 +188,7 @@ async def _close(resource: Any) -> None:
 
 def _default_planner_factory(
     config: dict[str, str],
-    credentials: LocalCredentialStore,
+    credentials: CredentialStore,
 ) -> Planner:
     provider = OpenAIChatCompletionsProvider(
         base_url=config["base_url"],
@@ -210,7 +220,12 @@ def create_coordinator_app(
         ensure_known_hosts_file(config.known_hosts_path)
         database = Database(config.db_path)
         database.migrate()
-        credentials = LocalCredentialStore(config.credentials_path)
+        if config.credential_backend in {"auto", "keychain"} and KeychainCredentialStore.available():
+            keychain = KeychainCredentialStore()
+            migrate_credentials(LocalCredentialStore(config.credentials_path), keychain)
+            credentials: CredentialStore = keychain
+        else:
+            credentials = LocalCredentialStore(config.credentials_path)
         artifacts = ArtifactManager(config.projects_dir)
         clients = dict(node_clients or {})
         tunnel_provider = tunnels or SshTunnelProvider(known_hosts_path=config.known_hosts_path)
@@ -261,6 +276,7 @@ def create_coordinator_app(
             node_clients=clients,
             node_client_factory=build_node_client,
         )
+        services.readiness = ReadinessService(services)
         app.state.services = services
         try:
             for project in projects.list():
@@ -281,9 +297,7 @@ def create_coordinator_app(
     async def require_desktop_session(request: Request, call_next):
         token = config.session_token
         if token and request.url.path != "/api/status":
-            supplied = request.headers.get("X-Xuanji-Session") or request.query_params.get(
-                "session_token", ""
-            )
+            supplied = request.headers.get("X-Xuanji-Session", "")
             if not hmac.compare_digest(supplied, token):
                 return JSONResponse(
                     status_code=401,
@@ -310,7 +324,9 @@ def create_coordinator_app(
     from .nodes import router as nodes_router
     from .planner import router as planner_router
     from .projects import router as projects_router
+    from .readiness import router as readiness_router
     from .runs import router as runs_router
+    from .session import router as session_router
     from .workflows import router as workflows_router
 
     for router in (
@@ -321,6 +337,8 @@ def create_coordinator_app(
         planner_router,
         artifacts_router,
         events_router,
+        readiness_router,
+        session_router,
     ):
         app.include_router(router)
 

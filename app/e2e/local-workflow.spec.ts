@@ -27,7 +27,10 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await ensureWorkspaceReady(page);
 
     const projectName = `画布交互测试 ${Date.now()}`;
-    await page.getByLabel('新项目').fill(projectName);
+    if (!(await page.getByLabel('项目名称').isVisible())) {
+      await page.locator('.project-create-details summary').click();
+    }
+    await page.getByLabel('项目名称').fill(projectName);
     await page.getByRole('button', { name: '创建项目' }).click();
     await expect(page.getByRole('banner', { name: '顶部运行栏' })).toContainText(projectName);
 
@@ -106,7 +109,10 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await ensureWorkspaceReady(page);
 
     // 1) Create project via UI
-    await page.getByLabel('新项目').fill('端到端本地工作流');
+    if (!(await page.getByLabel('项目名称').isVisible())) {
+      await page.locator('.project-create-details summary').click();
+    }
+    await page.getByLabel('项目名称').fill('端到端本地工作流');
     await page.getByRole('button', { name: '创建项目' }).click();
     // <option> content is not "visible" to Playwright; assert via select value/text
     await expect
@@ -147,8 +153,13 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     const research = workflow.tasks.find((task: { id: string }) => task.id === 'research');
     expect(research.prompt).toContain('端到端测试修改后的研究指令');
 
-    // 4) Review (freeze)
+    // 4) Review (freeze) — 审核工作区：确认警告后提交快照哈希
     await page.getByRole('button', { name: '审核工作流' }).click();
+    const reviewDialog = page.getByRole('dialog', { name: '审核工作流' });
+    await expect(reviewDialog).toBeVisible();
+    const ack = reviewDialog.getByLabel('我已阅读并接受以上全部警告');
+    if (await ack.count()) await ack.check();
+    await reviewDialog.getByRole('button', { name: '确认审核' }).click();
     await expect(page.getByText('已审核，编辑已冻结')).toBeVisible({ timeout: 10_000 });
 
     // 5) Execute

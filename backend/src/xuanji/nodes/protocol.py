@@ -43,6 +43,11 @@ class TaskOutputPolicy(NodeMessage):
         return [path.replace("\\", "/") for path in value]
 
 
+class VerifyStep(NodeMessage):
+    kind: Literal["command", "file_exists", "sha256", "manual"]
+    value: str = Field(min_length=1, max_length=10_000)
+
+
 class TaskDispatch(NodeMessage):
     idempotency_key: str = Field(
         min_length=1,
@@ -55,6 +60,10 @@ class TaskDispatch(NodeMessage):
     task_id: str = Field(min_length=1)
     inputs: list[TaskInput] = Field(default_factory=list)
     output_policy: TaskOutputPolicy = Field(default_factory=TaskOutputPolicy)
+    writes: list[str] = Field(default_factory=list)
+    done_definition: list[str] = Field(default_factory=list)
+    verify: list[VerifyStep] = Field(default_factory=list)
+    run_gate: Literal["auto", "review_before_start", "review_before_complete"] = "auto"
 
 
 class NodeTask(NodeMessage):
@@ -62,6 +71,7 @@ class NodeTask(NodeMessage):
     status: str = Field(min_length=1)
     hermes_run_id: str | None = None
     error: str | None = None
+    verify_results: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class NodeLogPage(NodeMessage):

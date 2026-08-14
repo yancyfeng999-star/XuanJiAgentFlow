@@ -1,6 +1,7 @@
 import { Bot, Clock3, FileOutput, RotateCcw, Server } from 'lucide-react';
 
 import ArtifactBrowser from '../artifacts/ArtifactBrowser';
+import RunHistory from '../runs/RunHistory';
 import TaskLog from '../runs/TaskLog';
 import { useI18n } from '../../lib/i18n';
 import { useLabels } from '../../lib/labels';
@@ -27,6 +28,7 @@ export default function Inspector() {
           <Bot size={28} />
           <h2>{t('inspector.title')}</h2>
           <p>{t('inspector.empty')}</p>
+          <RunHistory />
         </div>
       ) : (
         <>

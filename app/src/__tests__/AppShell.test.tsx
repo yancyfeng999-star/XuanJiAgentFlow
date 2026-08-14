@@ -23,6 +23,7 @@ const workflow: Workflow = {
   planner_model: null,
   status: 'draft',
   graph_json: {},
+  reviewed_at: null, reviewed_by: null, review_snapshot_hash: null, review_warnings: [],
   created_at: '2026-07-28T00:00:00Z',
   tasks: [{
     id: 'server-task',
@@ -38,6 +39,7 @@ const workflow: Workflow = {
     },
     retry_policy: { max_attempts: 3, delay_seconds: 1 },
     expected_outputs: [],
+    writes: [], done_definition: [], verify: [], run_gate: 'auto',
     ui_position: { x: 100, y: 100 },
   }],
 };
@@ -46,6 +48,7 @@ const client = {
   listProjects: vi.fn().mockResolvedValue([project]),
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
+  listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
 } as unknown as CoordinatorClient;
 
 beforeEach(() => {

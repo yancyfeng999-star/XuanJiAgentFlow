@@ -29,8 +29,46 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const { t } = useI18n();
   const { mediaTypeLabel } = useLabels();
+
+  // 产物下载使用 header 会话认证 + Blob，不把长期会话令牌写进 URL、历史或 referer
+  const download = async (artifact: Artifact) => {
+    setDownloading(artifact.id);
+    setError(null);
+    try {
+      const query = new URLSearchParams({ path: artifact.relative_path });
+      const response = await fetch(
+        `${baseUrl.replace(/\/+$/, '')}/api/runs/${encodeURIComponent(runId)}/artifacts/download?${query}`,
+        { headers: sessionToken ? { 'X-Xuanji-Session': sessionToken } : {} },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new CoordinatorError(
+          response.status,
+          payload?.error?.code ?? 'http_error',
+          payload?.error?.message ?? '',
+          payload?.error?.details ?? {},
+        );
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = fileName(artifact.relative_path);
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+    } catch (reason) {
+      if (reason instanceof CoordinatorError) {
+        setError({ code: reason.code, message: reason.message });
+      } else {
+        setError({ code: 'client_error', message: t('artifacts.loadError') });
+      }
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -78,20 +116,20 @@ export default function ArtifactBrowser({ runId, taskId }: ArtifactBrowserProps)
         <p className="muted">{t('artifacts.empty')}</p>
       ) : (
         <ul className="artifact-list">
-          {artifacts.map((artifact) => {
-            const query = new URLSearchParams({ path: artifact.relative_path });
-            if (sessionToken) query.set('session_token', sessionToken);
-            const href = `${baseUrl.replace(/\/+$/, '')}/api/runs/${encodeURIComponent(runId)}/artifacts/download?${query}`;
-            return (
-              <li key={artifact.id}>
-                <a href={href} target="_blank" rel="noreferrer">
-                  {fileName(artifact.relative_path)}
-                </a>
-                <span>{formatSize(t, artifact.size)}</span>
-                <span className="muted">{mediaTypeLabel(artifact.media_type)}</span>
-              </li>
-            );
-          })}
+          {artifacts.map((artifact) => (
+            <li key={artifact.id}>
+              <button
+                type="button"
+                className="artifact-download"
+                onClick={() => void download(artifact)}
+                disabled={downloading === artifact.id}
+              >
+                {fileName(artifact.relative_path)}
+              </button>
+              <span>{formatSize(t, artifact.size)}</span>
+              <span className="muted">{mediaTypeLabel(artifact.media_type)}</span>
+            </li>
+          ))}
         </ul>
       )}
     </section>

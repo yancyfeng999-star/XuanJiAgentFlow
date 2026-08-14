@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
-import type { ExpectedOutput, HermesNode, WorkflowTask } from '../../lib/client';
+import type { ExpectedOutput, HermesNode, VerifyStep, WorkflowTask } from '../../lib/client';
 import { useT } from '../../lib/i18n';
 import { useLabels } from '../../lib/labels';
 import { useWorkspaceStore } from '../../store/workspaceStore';
@@ -71,6 +71,10 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
   const [attempts, setAttempts] = useState(String(task.retry_policy.max_attempts));
   const [delay, setDelay] = useState(String(task.retry_policy.delay_seconds));
   const [outputs, setOutputs] = useState(task.expected_outputs);
+  const [writes, setWrites] = useState(task.writes.join('\n'));
+  const [doneDefinition, setDoneDefinition] = useState(task.done_definition.join('\n'));
+  const [verifySteps, setVerifySteps] = useState<VerifyStep[]>(task.verify);
+  const [runGate, setRunGate] = useState(task.run_gate);
   const t = useT();
   const { capabilityLabel, mediaTypeLabel } = useLabels();
 
@@ -89,6 +93,10 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
     setAttempts(String(task.retry_policy.max_attempts));
     setDelay(String(task.retry_policy.delay_seconds));
     setOutputs(task.expected_outputs);
+    setWrites(task.writes.join('\n'));
+    setDoneDefinition(task.done_definition.join('\n'));
+    setVerifySteps(task.verify);
+    setRunGate(task.run_gate);
   }, [task]);
 
   const workflowModels = workflow?.tasks.flatMap((item) => item.execution_policy.required_models) ?? [];
@@ -121,6 +129,10 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
       expected_outputs: outputs
         .map((output) => ({ path: output.path.trim(), media_type: output.media_type || null }))
         .filter((output) => output.path),
+      writes: writes.split('\n').map((line) => line.trim()).filter(Boolean),
+      done_definition: doneDefinition.split('\n').map((line) => line.trim()).filter(Boolean),
+      verify: verifySteps.filter((step) => step.value.trim()),
+      run_gate: runGate,
     });
   };
 
@@ -193,6 +205,58 @@ export default function TaskEditor({ task }: { task: WorkflowTask }) {
           </div>
         ))}
         {!frozen && <button type="button" className="add-output" onClick={() => setOutputs([...outputs, { path: '', media_type: null }])}><Plus size={14} />{t('task.addOutput')}</button>}
+      </fieldset>
+      <fieldset className="output-field" disabled={frozen}>
+        <legend>{t('task.contract')}</legend>
+        <label htmlFor="task-writes">{t('task.writes')}</label>
+        <textarea id="task-writes" value={writes} onChange={(event) => setWrites(event.target.value)} placeholder={t('task.writesPlaceholder')} rows={2} />
+        <label htmlFor="task-done">{t('task.doneDefinition')}</label>
+        <textarea id="task-done" value={doneDefinition} onChange={(event) => setDoneDefinition(event.target.value)} placeholder={t('task.donePlaceholder')} rows={2} />
+        <label htmlFor="task-run-gate">{t('task.runGate')}</label>
+        <select id="task-run-gate" value={runGate} onChange={(event) => setRunGate(event.target.value as typeof runGate)}>
+          <option value="auto">{t('task.runGateAuto')}</option>
+          <option value="review_before_start">{t('task.runGateBeforeStart')}</option>
+          <option value="review_before_complete">{t('task.runGateBeforeComplete')}</option>
+        </select>
+        <label>{t('task.verify')}</label>
+        {verifySteps.map((step, index) => (
+          <div className="output-row" key={index}>
+            <label>
+              <span>{t('task.verifyKind')}</span>
+              <select
+                value={step.kind}
+                onChange={(event) => setVerifySteps(verifySteps.map((item, itemIndex) =>
+                  itemIndex === index ? { ...item, kind: event.target.value as VerifyStep['kind'] } : item))}
+              >
+                <option value="command">{t('task.verifyCommand')}</option>
+                <option value="file_exists">{t('task.verifyFile')}</option>
+                <option value="sha256">{t('task.verifySha')}</option>
+                <option value="manual">{t('task.verifyManual')}</option>
+              </select>
+            </label>
+            <label>
+              <span>{t('task.verifyValue')}</span>
+              <input
+                value={step.value}
+                onChange={(event) => setVerifySteps(verifySteps.map((item, itemIndex) =>
+                  itemIndex === index ? { ...item, value: event.target.value } : item))}
+              />
+            </label>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setVerifySteps(verifySteps.filter((_, itemIndex) => itemIndex !== index))}
+              aria-label={t('task.deleteVerify', { name: index + 1 })}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        {!frozen && (
+          <button type="button" className="add-output" onClick={() => setVerifySteps([...verifySteps, { kind: 'file_exists', value: '' }])}>
+            <Plus size={14} />{t('task.addVerify')}
+          </button>
+        )}
       </fieldset>
       <button type="submit" className="form-primary" disabled={frozen}>{t('task.save')}</button>
       {!frozen && <button type="button" className="danger-link" onClick={() => void removeTask(task.id)}>{t('task.delete')}</button>}

@@ -86,6 +86,11 @@ export async function selectProjectDir(): Promise<string | null> {
   return invoke<string | null>('select_project_dir');
 }
 
+export async function restartCoordinator(): Promise<RuntimeInfo | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<RuntimeInfo>('restart_coordinator');
+}
+
 export async function selectSshKey(): Promise<string | null> {
   if (!isTauriRuntime()) return null;
   return invoke<string | null>('select_ssh_key');
