@@ -44,7 +44,7 @@
 
 .btn-ghost {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--fg-muted);
   border: none;
 }
 .btn-ghost:hover:not(:disabled) {

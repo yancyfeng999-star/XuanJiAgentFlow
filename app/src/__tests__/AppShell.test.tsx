@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AppShell from '../app/AppShell';
 import type { CoordinatorClient, Project, Workflow } from '../lib/client';
+import { applyTheme, initTheme, setThemePreference } from '../lib/theme';
 import { setWorkspaceClient, useWorkspaceStore } from '../store/workspaceStore';
 
 const project: Project = {
@@ -97,5 +98,53 @@ describe('Xuanji 2.0 workspace shell', () => {
     expect(screen.getByText('运行中')).toBeInTheDocument();
     expect(screen.getByText('42%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '42');
+  });
+
+  it('maps light, dark, and system theme onto document data-theme', async () => {
+    await renderReadyShell();
+    expect(setThemePreference('light')).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(setThemePreference('dark')).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    const media = {
+      matches: true,
+      media: '(prefers-color-scheme: dark)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onchange: null,
+    };
+    window.matchMedia = vi.fn().mockReturnValue(media) as unknown as typeof window.matchMedia;
+    expect(applyTheme('system')).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('follows OS color scheme changes while preference is system', async () => {
+    await renderReadyShell();
+    const listeners: Array<(event: MediaQueryListEvent) => void> = [];
+    const media = {
+      matches: false,
+      media: '(prefers-color-scheme: dark)',
+      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+        listeners.push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onchange: null,
+    };
+    window.matchMedia = vi.fn().mockReturnValue(media) as unknown as typeof window.matchMedia;
+    setThemePreference('system');
+    initTheme();
+    expect(document.documentElement.dataset.theme).toBe('light');
+    media.matches = true;
+    act(() => {
+      listeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent));
+    });
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 });

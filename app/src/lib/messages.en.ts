@@ -75,6 +75,7 @@ export const messages: Record<string, string> = {
   'theme.toDark': 'Switch to dark mode',
   'theme.light': 'Light mode',
   'theme.dark': 'Dark mode',
+  'theme.system': 'Match system',
 
   'run.bar': 'Run bar',
   'run.noProject': 'No project selected',

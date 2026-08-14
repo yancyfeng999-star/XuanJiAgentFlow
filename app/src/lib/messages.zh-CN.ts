@@ -75,6 +75,7 @@ export const messages: Record<string, string> = {
   'theme.toDark': '切换到深色模式',
   'theme.light': '浅色模式',
   'theme.dark': '深色模式',
+  'theme.system': '跟随系统',
 
   'run.bar': '顶部运行栏',
   'run.noProject': '未选择项目',
