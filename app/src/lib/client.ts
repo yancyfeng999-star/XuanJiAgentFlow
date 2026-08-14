@@ -62,6 +62,7 @@ export interface Workflow {
   goal: string;
   planner_provider: string | null;
   planner_model: string | null;
+  thinking_model_id?: string | null;
   status: WorkflowStatus;
   graph_json: Record<string, unknown>;
   tasks: WorkflowTask[];
@@ -111,6 +112,23 @@ export interface PlanInput {
   goal: string;
   context?: string;
   constraints?: Record<string, unknown>;
+  thinking_model_id?: string;
+}
+
+export interface ThinkingModelProfile {
+  id: string;
+  display_name: string;
+  provider_kind: 'openai';
+  api_mode: 'responses' | 'chat_completions';
+  base_url: string;
+  model_id: string;
+  credential_key: string;
+  enabled: boolean;
+  is_default: boolean;
+  reasoning_effort: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | null;
+  credential_configured: boolean;
+  last_test_status: 'untested' | 'ok' | 'failed';
+  last_tested_at: string | null;
 }
 
 export interface TaskAttempt {
@@ -370,6 +388,11 @@ export interface CoordinatorClient {
   provisionNode(nodeId: string, hermesPort: number): Promise<{ node_id: string; completed: boolean; steps: Record<string, unknown>[] }>;
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
+  listThinkingModels(): Promise<{ items: ThinkingModelProfile[] }>;
+  createThinkingModel(input: Record<string, unknown>): Promise<ThinkingModelProfile>;
+  updateThinkingModel(id: string, input: Record<string, unknown>): Promise<ThinkingModelProfile>;
+  deleteThinkingModel(id: string): Promise<void>;
+  setDefaultThinkingModel(id: string): Promise<ThinkingModelProfile>;
   getReadiness(query?: ReadinessQuery): Promise<ReadinessResult>;
   createWsTicket(runId: string): Promise<{ ticket: string; expires_in: number }>;
 }
@@ -461,6 +484,11 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),
+    listThinkingModels: () => request('/api/thinking-models'),
+    createThinkingModel: (input) => request('/api/thinking-models', json('POST', input)),
+    updateThinkingModel: (id, input) => request(`/api/thinking-models/${encodeURIComponent(id)}`, json('PATCH', input)),
+    deleteThinkingModel: (id) => request(`/api/thinking-models/${encodeURIComponent(id)}`, json('DELETE')),
+    setDefaultThinkingModel: (id) => request(`/api/thinking-models/${encodeURIComponent(id)}/default`, json('PUT')),
     createWsTicket: (runId) => request('/api/session/ws-tickets', json('POST', { run_id: runId })),
     getReadiness: (query = {}) => {
       const params = new URLSearchParams();

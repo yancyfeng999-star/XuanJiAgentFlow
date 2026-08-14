@@ -28,7 +28,7 @@ export default function ReadinessCenter() {
   const runAction = (action: ReadinessAction) => {
     switch (action) {
       case 'open_planner':
-        setActivePanel('settings');
+        setActivePanel('thinking_models');
         break;
       case 'open_nodes':
         setActivePanel('nodes');

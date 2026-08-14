@@ -46,6 +46,8 @@ const makeClient = () => ({
   createRun: vi.fn(), startRun: vi.fn(),
   listNodes: vi.fn().mockResolvedValue([]), createNode: vi.fn(), updateNode: vi.fn(), deleteNode: vi.fn(), diagnoseNode: vi.fn(), provisionNode: vi.fn(),
   getPlannerConfig: vi.fn().mockResolvedValue({ base_url: null, model: null, credential_key: null, credential_configured: false }), setPlannerConfig: vi.fn(),
+  listThinkingModels: vi.fn().mockResolvedValue({ items: [] }),
+  createThinkingModel: vi.fn(), updateThinkingModel: vi.fn(), deleteThinkingModel: vi.fn(), setDefaultThinkingModel: vi.fn(),
 }) as unknown as CoordinatorClient;
 
 describe('workspace store', () => {

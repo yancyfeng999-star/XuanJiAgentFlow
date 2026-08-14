@@ -36,6 +36,14 @@ const client = {
   updateNode: vi.fn(), deleteNode: vi.fn(), diagnoseNode: vi.fn(), provisionNode: vi.fn().mockResolvedValue({ node_id: 'remote-1', completed: true, steps: [] }),
   getPlannerConfig: vi.fn().mockResolvedValue({ base_url: null, model: null, credential_key: null, credential_configured: false }),
   setPlannerConfig: vi.fn().mockResolvedValue({ base_url: 'https://planner.test/v1', model: 'model', credential_key: 'planner.primary', credential_configured: true }),
+  listThinkingModels: vi.fn().mockResolvedValue({ items: [] }),
+  createThinkingModel: vi.fn().mockResolvedValue({
+    id: 'tm-1', display_name: 'Default', provider_kind: 'openai', api_mode: 'chat_completions',
+    base_url: 'https://planner.test/v1', model_id: 'model', credential_key: 'thinking-model.tm-1.api-key',
+    enabled: true, is_default: true, reasoning_effort: null, credential_configured: true,
+    last_test_status: 'untested', last_tested_at: null,
+  }),
+  updateThinkingModel: vi.fn(), deleteThinkingModel: vi.fn(), setDefaultThinkingModel: vi.fn(),
 } as unknown as CoordinatorClient;
 
 beforeEach(() => {
@@ -161,6 +169,14 @@ describe('editable workflow workspace', () => {
     vi.mocked(client.getPlannerConfig).mockResolvedValue({
       base_url: 'https://planner.test/v1', model: 'model', credential_key: 'planner.primary', credential_configured: true,
     });
+    vi.mocked(client.listThinkingModels).mockResolvedValue({
+      items: [{
+        id: 'tm-1', display_name: 'Default', provider_kind: 'openai', api_mode: 'chat_completions',
+        base_url: 'https://planner.test/v1', model_id: 'model', credential_key: 'planner.primary',
+        enabled: true, is_default: true, reasoning_effort: null, credential_configured: true,
+        last_test_status: 'ok', last_tested_at: null,
+      }],
+    });
     await renderReadyShell();
 
     fireEvent.click(screen.getByRole('button', { name: '节点' }));
@@ -168,7 +184,7 @@ describe('editable workflow workspace', () => {
     expect(await screen.findByText('访问密钥已配置')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '思考模型' }));
-    expect(await screen.findByText('接口密钥已配置')).toBeInTheDocument();
+    expect(await screen.findByText('密钥已配置')).toBeInTheDocument();
   });
 
   it('shows structured error when remote provisioning fails verification', async () => {
@@ -195,13 +211,12 @@ describe('editable workflow workspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '思考模型' }));
     expect(screen.queryByLabelText('协调器基础地址')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('规划器基础地址'), { target: { value: 'https://planner.test/v1' } });
-    fireEvent.change(screen.getByLabelText('规划模型'), { target: { value: 'model' } });
-    fireEvent.change(screen.getByLabelText('规划器接口密钥'), { target: { value: 'planner-secret' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存规划器配置' }));
-    await waitFor(() => expect(screen.getByText('接口密钥已配置')).toBeInTheDocument());
-    expect(client.setPlannerConfig).toHaveBeenCalled();
-    expect(screen.getByLabelText('规划器接口密钥')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('接口地址'), { target: { value: 'https://planner.test/v1' } });
+    fireEvent.change(screen.getByLabelText('模型 ID'), { target: { value: 'model' } });
+    fireEvent.change(screen.getByLabelText('接口密钥（留空表示保留现有）'), { target: { value: 'planner-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存思考模型' }));
+    await waitFor(() => expect(client.createThinkingModel).toHaveBeenCalled());
+    expect(screen.getByLabelText('接口密钥（留空表示保留现有）')).toHaveValue('');
 
     fireEvent.click(screen.getByRole('button', { name: '节点' }));
     fireEvent.click(screen.getByRole('button', { name: /远程节点/ }));

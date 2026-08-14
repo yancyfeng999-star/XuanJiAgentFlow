@@ -18,6 +18,7 @@ import {
   type ReviewPrepareResult,
   type Run,
   type TaskAttempt,
+  type ThinkingModelProfile,
   type Workflow,
   type WorkflowTask,
 } from '../lib/client';
@@ -45,7 +46,8 @@ export type PendingAction =
   | { kind: 'pause' | 'resume' | 'cancel'; key: string }
   | { kind: 'retry_task' | 'skip_task'; key: string }
   | { kind: 'save_node' | 'diagnose_node' | 'provision_node' | 'delete_node'; key: string }
-  | { kind: 'save_planner'; key: 'planner' };
+  | { kind: 'save_planner'; key: 'planner' }
+  | { kind: 'save_thinking_model'; key: string };
 
 export type PendingActionKind = PendingAction['kind'];
 
@@ -98,6 +100,8 @@ export interface WorkspaceState {
   inspectorCollapsed: boolean;
   inspectorWidth: number;
   plannerConfig: PlannerConfig;
+  thinkingModels: ThinkingModelProfile[];
+  selectedThinkingModelId: string | null;
   readiness: ReadinessResult | null;
   pendingActions: PendingAction[];
   error: WorkspaceError | null;
@@ -147,6 +151,9 @@ export interface WorkspaceState {
   removeNode: (nodeId: string) => Promise<void>;
   provisionNode: (nodeId: string, hermesPort: number) => Promise<void>;
   loadSettings: () => Promise<void>;
+  loadThinkingModels: () => Promise<void>;
+  saveThinkingModel: (input: Record<string, unknown>, id?: string) => Promise<void>;
+  setDefaultThinkingModel: (id: string) => Promise<void>;
   savePlannerConfig: (input: PlannerConfigInput) => Promise<void>;
   loadReadiness: (mode?: 'local' | 'deep') => Promise<void>;
   resetWorkspace: () => void;
@@ -181,6 +188,8 @@ const initialState = {
   inspectorCollapsed: false,
   inspectorWidth: 360,
   plannerConfig: emptyPlannerConfig,
+  thinkingModels: [] as ThinkingModelProfile[],
+  selectedThinkingModelId: null as string | null,
   readiness: null as ReadinessResult | null,
   pendingActions: [] as PendingAction[],
   error: null as WorkspaceError | null,
@@ -1004,6 +1013,29 @@ export function createWorkspaceStore(getClient: () => CoordinatorClient = () => 
         } finally {
           end(pending);
         }
+      },
+      loadThinkingModels: async () => {
+        const models = await getClient().listThinkingModels();
+        const selected = models.items.find((item) => item.is_default)?.id ?? models.items[0]?.id ?? null;
+        set({ thinkingModels: models.items, selectedThinkingModelId: selected });
+      },
+      saveThinkingModel: async (input, id) => {
+        const pending: PendingAction = { kind: 'save_thinking_model', key: id ?? 'new' };
+        if (!begin(pending)) return;
+        try {
+          if (id) await getClient().updateThinkingModel(id, input);
+          else await getClient().createThinkingModel(input);
+          await get().loadThinkingModels();
+          void get().loadReadiness();
+        } catch (error) {
+          fail(error);
+        } finally {
+          end(pending);
+        }
+      },
+      setDefaultThinkingModel: async (id) => {
+        await getClient().setDefaultThinkingModel(id);
+        await get().loadThinkingModels();
       },
       loadSettings: async () => {
         const request = ++settingsRequest;

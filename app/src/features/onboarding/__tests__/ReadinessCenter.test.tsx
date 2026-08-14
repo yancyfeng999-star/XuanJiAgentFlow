@@ -71,7 +71,7 @@ describe('ReadinessCenter', () => {
     useWorkspaceStore.setState({ readiness: blockedResult });
     render(<ReadinessCenter />);
     expect(screen.getByText('项目目录')).toBeTruthy();
-    expect(screen.getByText('Planner')).toBeTruthy();
+    expect(screen.getByText('思考模型')).toBeTruthy();
     expect(screen.getByText('工作流审核')).toBeTruthy();
     expect(screen.getByText('任务匹配')).toBeTruthy();
     expect(screen.getByText('执行节点')).toBeTruthy();
@@ -85,7 +85,7 @@ describe('ReadinessCenter', () => {
     useWorkspaceStore.setState({ readiness: blockedResult });
     render(<ReadinessCenter />);
     fireEvent.click(screen.getByRole('button', { name: '打开设置' }));
-    expect(useWorkspaceStore.getState().activePanel).toBe('settings');
+    expect(useWorkspaceStore.getState().activePanel).toBe('thinking_models');
     fireEvent.click(screen.getByRole('button', { name: '打开节点' }));
     expect(useWorkspaceStore.getState().activePanel).toBe('nodes');
   });

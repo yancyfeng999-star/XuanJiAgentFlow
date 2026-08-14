@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useI18n, type Locale } from '../../lib/i18n';
 import { setThemePreference, type ThemePreference } from '../../lib/theme';
 import { useWorkspaceStore, type SettingsSection } from '../../store/workspaceStore';
-import PlannerSettings from './PlannerSettings';
+import ThinkingModels from '../thinking-models/ThinkingModels';
 
 const SECTIONS: SettingsSection[] = [
   'appearance',
@@ -64,7 +64,7 @@ export default function SettingsShell() {
             </label>
           </>
         )}
-        {settingsSection === 'thinking_models' && <PlannerSettings />}
+        {settingsSection === 'thinking_models' && <ThinkingModels />}
         {settingsSection === 'execution' && (
           <>
             <h2>{t('settings.section.execution')}</h2>
