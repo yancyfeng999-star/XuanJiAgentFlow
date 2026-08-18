@@ -14,8 +14,7 @@ body {
   color: var(--text-primary);
   height: 100vh;
   overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -61,22 +60,6 @@ a {
 ::selection {
   background: var(--gold-light);
   color: var(--text-primary);
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 100px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
 }
 
 

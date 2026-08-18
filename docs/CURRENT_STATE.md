@@ -18,6 +18,21 @@
 - Python Coordinator（FastAPI）负责项目、工作流、调度、执行、恢复、节点与产物。
 - 远程 Node 仅监听 `127.0.0.1`，按任务临时 SSH 隧道访问（`StrictHostKeyChecking=yes`）。
 
+## 已通过测试验证的能力（2026-08-19 UI / 性能，Web 层）
+
+| 领域 | 验证方式 | 说明 |
+|---|---|---|
+| 首屏骨架 | vitest + Playwright | Coordinator 未就绪时已有导航/顶栏/画布骨架；无全屏 boot-only |
+| 顶栏单一主动作 | vitest | `deriveRunBarModel`：resolve / execute / pause；项目名 `no-path` 不改写 |
+| 就绪根因分组 | vitest + Playwright | `node_offline` 抑制 `task_without_matching_node`；40px 条 + 覆盖详情不改画布高度 |
+| 条件检查器 | vitest | 无 task/run 上下文不占宽；320–480 拖拽/键盘 |
+| 可读画布 | vitest + Playwright | 稳定 `data` 引用；静止边不动画；默认 zoom ≥0.62；卡片宽 ≥240 CSS px |
+| 启动编排 | vitest | 并行 bootstrap；AbortSignal；150ms readiness 合并；无项目不拉 readiness |
+| Bundle 门禁 | `npm run check:bundle` | eager raw 288.5 kB / gzip 89.6 kB；lazy canvas 179.5 kB |
+| 证据分层 | 本文 + baseline 评注 | `source_present` / `targeted_tests_passed` / `web_build_passed` / `browser_runtime_verified`；**`app_runtime_unverified`**；**`remote_release_unverified`** |
+
+版本号、Release、签名、公证、安装包与用户端验收**不因本任务改变**。
+
 ## 已通过测试验证的能力（2026-08-18 最终补救）
 
 | 领域 | 验证方式 | 说明 |

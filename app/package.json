@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:bundle": "node ../scripts/check-frontend-bundle.mjs dist",
     "lint": "oxlint src e2e",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -33,6 +33,12 @@
   --radius-card: 8px;
   --radius-overlay: 10px;
   --control-height: 32px;
+  --header-height: 52px;
+  --readiness-strip-height: 40px;
+  --sidebar-width: 208px;
+  --inspector-default-width: 352px;
+  --button-disabled-bg: var(--surface-raised);
+  --button-disabled-text: var(--text-tertiary);
   --duration-fast: 140ms;
   --duration-drawer: 200ms;
 

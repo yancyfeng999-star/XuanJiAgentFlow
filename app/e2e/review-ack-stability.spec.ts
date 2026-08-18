@@ -30,7 +30,7 @@ test.describe('review acknowledgement stability', () => {
     await createProjectViaUi(page, firstProjectName);
     await openWorkflowPanel(page);
     await page.locator('#workflow-goal').fill('验证画布断线和删节点');
-    await page.getByRole('button', { name: '生成规划' }).click();
+    await page.getByRole('main', { name: '工作流画布' }).getByRole('button', { name: '生成规划' }).click();
     await expect(page.getByRole('button', { name: '选择任务：资料研究' })).toBeVisible({
       timeout: 15_000,
     });
@@ -66,7 +66,7 @@ test.describe('review acknowledgement stability', () => {
     await createProjectViaUi(page, reviewProjectName);
     await openWorkflowPanel(page);
     await page.locator('#workflow-goal').fill('生成一份需要警告确认的研究报告');
-    await page.getByRole('button', { name: '生成规划' }).click();
+    await page.getByRole('main', { name: '工作流画布' }).getByRole('button', { name: '生成规划' }).click();
     await expect(page.getByText(/工作流版本 \d+/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: '选择任务：资料研究' })).toBeVisible({
       timeout: 15_000,

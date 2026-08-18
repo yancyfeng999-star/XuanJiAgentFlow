@@ -31,6 +31,21 @@ describe('visual token contract', () => {
     expect(tokens).toMatch(/--text-meta:\s*11px/);
     expect(tokens).toContain(':root[data-theme="light"]');
     expect(tokens).toContain(':root[data-theme="dark"]');
+    expect(tokens).toMatch(/--header-height:\s*52px/);
+    expect(tokens).toMatch(/--readiness-strip-height:\s*40px/);
+    expect(tokens).toMatch(/--button-disabled-bg:/);
+    expect(tokens).toMatch(/--button-disabled-text:/);
+  });
+
+  it('does not force global antialiased smoothing or a custom WebKit scrollbar', () => {
+    const css = productCss();
+    expect(css).not.toMatch(/-webkit-font-smoothing:\s*antialiased/);
+    expect(css).not.toMatch(/::-webkit-scrollbar\s*\{/);
+  });
+
+  it('does not restore a three-column grid at max-width 1000px', () => {
+    const css = readFileSync(join(stylesDir, '../app/AppShell.css'), 'utf8');
+    expect(css).not.toMatch(/@media\s*\(max-width:\s*1000px\)[^{]*\{[^}]*grid-template-columns:\s*190px/);
   });
 
   it('does not use Songti SC or 9/10px for necessary product text', () => {

@@ -75,6 +75,10 @@ if [[ -d "$APP_DIR/dist" ]]; then
 fi
 (cd "$APP_DIR" && npm run build)
 
+echo
+echo "=== 6b. Frontend bundle gate ==="
+(cd "$APP_DIR" && npm run check:bundle)
+
 if [[ "$SKIP_E2E" == false ]]; then
   echo
   if [[ -f "$APP_DIR/playwright.config.ts" || -f "$APP_DIR/playwright.config.js" || \

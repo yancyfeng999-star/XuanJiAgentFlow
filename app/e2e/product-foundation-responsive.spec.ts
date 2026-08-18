@@ -3,10 +3,10 @@ import { expect, test } from '@playwright/test';
 import { ensureWorkspaceReady } from './helpers';
 
 const sizes = [
+  { width: 1288, height: 832 },
   { width: 1440, height: 900 },
   { width: 1100, height: 800 },
   { width: 860, height: 760 },
-  { width: 768, height: 720 },
 ];
 
 test('core actions remain available across breakpoints', async ({ page }) => {

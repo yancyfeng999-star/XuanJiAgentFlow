@@ -1,23 +1,28 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { getLocale, translate, useI18n, useT } from '../lib/i18n';
+import { markMilestone } from '../lib/performance';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import WorkflowCanvas from '../features/canvas/WorkflowCanvas';
-import Inspector from '../features/inspector/Inspector';
+import WorkspaceSkeleton from '../components/WorkspaceSkeleton';
 import WorkspaceNav from '../features/navigation/WorkspaceNav';
-import NodeManager from '../features/nodes/NodeManager';
 import ReadinessCenter from '../features/onboarding/ReadinessCenter';
-import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
-import SettingsShell from '../features/settings/SettingsShell';
 import { getCoordinatorStatus, restartCoordinator, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
 import { bindNativeUpdateMenu, getUpdateService, isRunBlockingRelaunch } from '../lib/updater';
 import './AppShell.css';
 
+const WorkflowCanvas = lazy(() => import('../features/canvas/WorkflowCanvas'));
+const Inspector = lazy(() => import('../features/inspector/Inspector'));
+const NodeManager = lazy(() => import('../features/nodes/NodeManager'));
+const SettingsShell = lazy(() => import('../features/settings/SettingsShell'));
+const ProjectRail = lazy(() => import('../features/projects/ProjectRail'));
+
+export type BootPhase = 'connecting' | 'loading_workspace' | 'ready' | 'degraded';
+
 type BootState =
-  | { phase: 'booting' }
-  | { phase: 'ready'; runtime: RuntimeInfo }
-  | { phase: 'error'; message: string };
+  | { phase: 'connecting' }
+  | { phase: 'loading_workspace' | 'ready'; runtime: RuntimeInfo }
+  | { phase: 'degraded'; message: string };
 
 export default function AppShell() {
   const panel = useWorkspaceStore((state) => state.activePanel);
@@ -26,19 +31,24 @@ export default function AppShell() {
   const setCoordinatorBaseUrl = useWorkspaceStore((state) => state.setCoordinatorBaseUrl);
   const coordinatorBaseUrl = useWorkspaceStore((state) => state.coordinatorBaseUrl);
   const coordinatorSessionToken = useWorkspaceStore((state) => state.coordinatorSessionToken);
+  const bootstrapWorkspace = useWorkspaceStore((state) => state.bootstrapWorkspace);
   const loadProjects = useWorkspaceStore((state) => state.loadProjects);
-  const loadProject = useWorkspaceStore((state) => state.loadProject);
-  const project = useWorkspaceStore((state) => state.project);
-  const readiness = useWorkspaceStore((state) => state.readiness);
-  const loadReadiness = useWorkspaceStore((state) => state.loadReadiness);
-  const navCollapsed = useWorkspaceStore((state) => state.navCollapsed);
-  const inspectorCollapsed = useWorkspaceStore((state) => state.inspectorCollapsed);
+  const projectLoadPhase = useWorkspaceStore((state) => state.projectLoadPhase);
+  const workflow = useWorkspaceStore((state) => state.workflow);
+  const inspectorContext = useWorkspaceStore((state) => state.inspectorContext);
   const inspectorWidth = useWorkspaceStore((state) => state.inspectorWidth);
+  const navCollapsed = useWorkspaceStore((state) => state.navCollapsed);
   const setActivePanel = useWorkspaceStore((state) => state.setActivePanel);
   const setSettingsSection = useWorkspaceStore((state) => state.setSettingsSection);
-  const [boot, setBoot] = useState<BootState>({ phase: 'booting' });
+  const closeInspector = useWorkspaceStore((state) => state.closeInspector);
+  const [boot, setBoot] = useState<BootState>({ phase: 'connecting' });
+  const [readinessExpanded, setReadinessExpanded] = useState(false);
   const t = useT();
   const { locale } = useI18n();
+
+  useEffect(() => {
+    markMilestone('shell_mounted');
+  }, []);
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
@@ -86,11 +96,12 @@ export default function AppShell() {
         if (runtime.baseUrl) {
           setCoordinatorBaseUrl(runtime.baseUrl, runtime.sessionToken);
         }
-        setBoot({ phase: 'ready', runtime });
+        markMilestone('runtime_healthy');
+        setBoot({ phase: 'loading_workspace', runtime });
       } catch (err) {
         if (cancelled) return;
         setBoot({
-          phase: 'error',
+          phase: 'degraded',
           message: err instanceof Error && /[\u4e00-\u9fff]/.test(err.message)
             ? err.message
             : translate(getLocale(), 'app.bootError.fallback'),
@@ -103,17 +114,23 @@ export default function AppShell() {
   }, [setCoordinatorBaseUrl]);
 
   useEffect(() => {
-    if (boot.phase !== 'ready') return;
-    void loadReadiness();
+    if (boot.phase !== 'loading_workspace') return;
+    let cancelled = false;
     void (async () => {
-      await loadProjects();
-      const { projects, project } = useWorkspaceStore.getState();
-      if (!project && projects[0]) await loadProject(projects[0].id);
+      await bootstrapWorkspace();
+      if (cancelled) return;
+      markMilestone('workspace_interactive');
+      setBoot((current) => current.phase === 'loading_workspace'
+        ? { phase: 'ready', runtime: current.runtime }
+        : current);
     })();
-  }, [boot.phase, loadReadiness, loadProjects, loadProject]);
+    return () => {
+      cancelled = true;
+    };
+  }, [boot.phase, bootstrapWorkspace]);
 
   useEffect(() => {
-    if (boot.phase !== 'ready') return;
+    if (boot.phase !== 'ready' && boot.phase !== 'loading_workspace') return;
     let cancelled = false;
     const syncRuntime = async () => {
       const runtime = await getCoordinatorStatus();
@@ -146,118 +163,133 @@ export default function AppShell() {
     setCoordinatorBaseUrl,
   ]);
 
-  if (boot.phase === 'booting') {
-    return (
-      <div className="app-shell boot-shell" role="status" aria-live="polite">
-        <div className="boot-card">
-          <strong>{t('app.booting.title')}</strong>
-          <span>{t('app.booting.hint')}</span>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (readinessExpanded) {
+        setReadinessExpanded(false);
+        return;
+      }
+      if (inspectorContext && window.matchMedia('(max-width: 1099px)').matches) {
+        closeInspector();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [closeInspector, inspectorContext, readinessExpanded]);
 
-  if (boot.phase === 'error') {
-    const retryBoot = async () => {
-      setBoot({ phase: 'booting' });
-      try {
-        const runtime = await waitForHealthyRuntime({ timeoutMs: 30_000, intervalMs: 200 });
-        if (runtime.baseUrl) setCoordinatorBaseUrl(runtime.baseUrl, runtime.sessionToken);
-        setBoot({ phase: 'ready', runtime });
-      } catch (err) {
-        setBoot({
-          phase: 'error',
-          message: err instanceof Error && /[一-鿿]/.test(err.message)
-            ? err.message
-            : translate(getLocale(), 'app.bootError.fallback'),
-        });
-      }
-    };
-    const restartAndRetry = async () => {
-      await restartCoordinator().catch(() => null);
-      await retryBoot();
-    };
-    const copyDiagnostics = async () => {
-      const runtime = await getCoordinatorStatus().catch(() => null);
-      const report = [
-        `time: ${new Date().toISOString()}`,
-        `error: ${boot.message}`,
-        `runtime_status: ${runtime?.status ?? 'unknown'}`,
-        `base_url: ${runtime?.baseUrl ?? 'none'}`,
-        'note: 诊断信息不含会话令牌、凭据或私钥内容',
-      ].join('\n');
-      try {
-        await navigator.clipboard.writeText(report);
-      } catch {
-        /* 剪贴板不可用时忽略 */
-      }
-    };
-    const quitApp = () => {
-      if ('__TAURI_INTERNALS__' in window) {
-        void import('@tauri-apps/plugin-process').then(({ exit }) => exit(0)).catch(() => window.close());
-      } else {
-        window.close();
-      }
-    };
-    return (
-      <div className="app-shell boot-shell" role="alert">
-        <div className="boot-card boot-error">
-          <strong>{t('app.bootError.title')}</strong>
-          <span>{boot.message}</span>
-          <div className="boot-actions">
-            <button type="button" onClick={() => void retryBoot()}>
-              {t('app.bootError.retry')}
-            </button>
-            <button type="button" onClick={() => void restartAndRetry()}>
-              {t('app.bootError.restartCoordinator')}
-            </button>
-            <button type="button" onClick={() => void copyDiagnostics()}>
-              {t('app.bootError.copyDiagnostics')}
-            </button>
-            <button type="button" onClick={quitApp}>
-              {t('app.bootError.quit')}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const retryBoot = async () => {
+    setBoot({ phase: 'connecting' });
+    try {
+      const runtime = await waitForHealthyRuntime({ timeoutMs: 30_000, intervalMs: 200 });
+      if (runtime.baseUrl) setCoordinatorBaseUrl(runtime.baseUrl, runtime.sessionToken);
+      setBoot({ phase: 'loading_workspace', runtime });
+    } catch (err) {
+      setBoot({
+        phase: 'degraded',
+        message: err instanceof Error && /[一-鿿]/.test(err.message)
+          ? err.message
+          : translate(getLocale(), 'app.bootError.fallback'),
+      });
+    }
+  };
+  const restartAndRetry = async () => {
+    await restartCoordinator().catch(() => null);
+    await retryBoot();
+  };
+  const copyDiagnostics = async () => {
+    const runtime = await getCoordinatorStatus().catch(() => null);
+    const report = [
+      `time: ${new Date().toISOString()}`,
+      `error: ${boot.phase === 'degraded' ? boot.message : 'unknown'}`,
+      `runtime_status: ${runtime?.status ?? 'unknown'}`,
+      `base_url: ${runtime?.baseUrl ?? 'none'}`,
+      'note: 诊断信息不含会话令牌、凭据或私钥内容',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(report);
+    } catch {
+      /* 剪贴板不可用时忽略 */
+    }
+  };
+  const quitApp = () => {
+    if ('__TAURI_INTERNALS__' in window) {
+      void import('@tauri-apps/plugin-process').then(({ exit }) => exit(0)).catch(() => window.close());
+    } else {
+      window.close();
+    }
+  };
 
-  const showInspector = panel === 'workflow' && !inspectorCollapsed;
-  const railWidth = navCollapsed ? 52 : 216;
+  const showInspector = panel === 'workflow' && inspectorContext !== null;
+  const railWidth = navCollapsed ? 52 : 208;
+  const connecting = boot.phase === 'connecting';
+  const canvasBusy = connecting || boot.phase === 'loading_workspace' || projectLoadPhase === 'loading';
+  const showCanvas = boot.phase !== 'connecting' && boot.phase !== 'degraded' && (Boolean(workflow) || projectLoadPhase === 'ready' || boot.phase === 'ready');
 
   return (
     <div
-      className={`app-shell${navCollapsed ? ' nav-collapsed' : ''}${inspectorCollapsed ? ' inspector-collapsed' : ''}`}
+      className={`app-shell${navCollapsed ? ' nav-collapsed' : ''}${showInspector ? '' : ' inspector-collapsed'}`}
       style={{
         ['--nav-width' as string]: `${railWidth}px`,
         ['--inspector-width' as string]: showInspector ? `${inspectorWidth}px` : '0px',
       }}
     >
       <WorkspaceNav />
-      <RunBar />
+      <RunBar
+        phase={boot.phase}
+        onResolve={() => setReadinessExpanded(true)}
+      />
       {panel === 'workflow' && (
         <>
-          <div className="workflow-stage">
-            {(!project || (readiness && !readiness.ready)) && <ReadinessCenter />}
-            <WorkflowCanvas />
-          </div>
-          {showInspector && <Inspector />}
+          <section className="workflow-stage" aria-busy={canvasBusy}>
+            <ReadinessCenter expanded={readinessExpanded} onExpandedChange={setReadinessExpanded} />
+            {!showCanvas ? (
+              boot.phase === 'degraded' ? (
+                <div className="boot-card boot-error workspace-degraded" role="alert">
+                  <strong>{t('app.bootError.title')}</strong>
+                  <span>{boot.message}</span>
+                  <div className="boot-actions">
+                    <button type="button" onClick={() => void retryBoot()}>{t('app.bootError.retry')}</button>
+                    <button type="button" onClick={() => void restartAndRetry()}>{t('app.bootError.restartCoordinator')}</button>
+                    <button type="button" onClick={() => void copyDiagnostics()}>{t('app.bootError.copyDiagnostics')}</button>
+                    <button type="button" onClick={quitApp}>{t('app.bootError.quit')}</button>
+                  </div>
+                </div>
+              ) : (
+                <WorkspaceSkeleton region="canvas" />
+              )
+            ) : (
+              <Suspense fallback={<WorkspaceSkeleton region="canvas" />}>
+                <WorkflowCanvas />
+              </Suspense>
+            )}
+          </section>
+          {showInspector && (
+            <Suspense fallback={<aside className="inspector inspector-skeleton" aria-label={t('inspector.title')} />}>
+              <Inspector />
+            </Suspense>
+          )}
         </>
       )}
       {panel === 'projects' && (
         <div className="panel-stage">
-          <ProjectRail />
+          <Suspense fallback={<WorkspaceSkeleton region="canvas" />}>
+            <ProjectRail />
+          </Suspense>
         </div>
       )}
       {panel === 'nodes' && (
         <div className="panel-stage">
-          <NodeManager />
+          <Suspense fallback={<WorkspaceSkeleton region="canvas" />}>
+            <NodeManager />
+          </Suspense>
         </div>
       )}
       {(panel === 'settings' || panel === 'thinking_models') && (
         <div className="panel-stage">
-          <SettingsShell />
+          <Suspense fallback={<WorkspaceSkeleton region="canvas" />}>
+            <SettingsShell />
+          </Suspense>
         </div>
       )}
       {error && (

@@ -10,10 +10,12 @@ test.describe('onboarding readiness journeys', () => {
     await selectProject(page, project.id);
     const center = page.getByRole('region', { name: '执行就绪检查' });
     await expect(center).toBeVisible();
-    await expect(center.getByText('项目目录', { exact: true })).toBeVisible();
-    await expect(center.getByText('思考模型')).toBeVisible();
-    await expect(center.getByText('执行节点', { exact: true })).toBeVisible();
-    await expect(center.getByText('尚未生成工作流')).toBeVisible();
+    await expect(center.locator('.readiness-strip')).toBeVisible();
+    await expect(center.locator('.readiness-groups')).toHaveCount(0);
+    await page.getByRole('button', { name: '查看详情' }).click();
+    await expect(center.locator('.readiness-groups li').first()).toBeVisible();
+    expect(await center.locator('.readiness-groups li').count()).toBeLessThanOrEqual(3);
+    expect(await page.getByRole('button', { name: '打开节点' }).count()).toBeLessThanOrEqual(1);
   });
 
   test('unreviewed workflow blocks execute with a visible reason', async ({ page, request }) => {
@@ -22,8 +24,8 @@ test.describe('onboarding readiness journeys', () => {
     await page.goto('/');
     await ensureWorkspaceReady(page);
     await selectProject(page, project.id);
-    await expect(page.getByRole('button', { name: '执行全部' })).toBeDisabled();
-    await expect(page.getByLabel('顶部运行栏').getByText('工作流未审核')).toBeVisible();
+    await expect(page.getByRole('button', { name: '审核工作流' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '执行全部' })).toHaveCount(0);
   });
 
   test('fully ready project enables execute', async ({ page, request }) => {

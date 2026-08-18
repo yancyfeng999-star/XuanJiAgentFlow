@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CoordinatorClient, ReadinessResult } from '../../../lib/client';
@@ -59,41 +59,35 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ReadinessCenter', () => {
-  it('shows unchecked hint before any result and fetches on demand', async () => {
+  it('hides the strip until a blocking result exists', () => {
     render(<ReadinessCenter />);
-    expect(screen.getByText('尚未检查执行条件，点击“检查”开始。')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /检查/ }));
-    await waitFor(() => expect(client.getReadiness).toHaveBeenCalled());
-    await screen.findByText('思考模型未配置');
+    expect(screen.queryByLabelText('执行就绪检查')).toBeNull();
   });
 
-  it('lists all six checks and blocking issues with actions', async () => {
+  it('shows a single root-cause strip and expands grouped details', async () => {
     useWorkspaceStore.setState({ readiness: blockedResult });
-    render(<ReadinessCenter />);
-    expect(screen.getByText('项目目录')).toBeTruthy();
-    expect(screen.getByText('思考模型')).toBeTruthy();
-    expect(screen.getByText('工作流审核')).toBeTruthy();
-    expect(screen.getByText('任务匹配')).toBeTruthy();
-    expect(screen.getByText('执行节点')).toBeTruthy();
-    expect(screen.getByText('凭据')).toBeTruthy();
+    render(<ReadinessCenter expanded={false} onExpandedChange={() => undefined} />);
     expect(screen.getByText('尚未创建项目')).toBeTruthy();
+    expect(screen.queryByText('思考模型未配置')).toBeNull();
+    render(<ReadinessCenter expanded onExpandedChange={() => undefined} />);
+    expect(screen.getAllByText('思考模型未配置').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: '打开设置' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '打开节点' })).toBeTruthy();
   });
 
   it('routes issue actions to the matching panel', async () => {
     useWorkspaceStore.setState({ readiness: blockedResult });
-    render(<ReadinessCenter />);
+    render(<ReadinessCenter expanded onExpandedChange={() => undefined} />);
     fireEvent.click(screen.getByRole('button', { name: '打开设置' }));
     expect(useWorkspaceStore.getState().activePanel).toBe('thinking_models');
     fireEvent.click(screen.getByRole('button', { name: '打开节点' }));
     expect(useWorkspaceStore.getState().activePanel).toBe('nodes');
   });
 
-  it('shows the ready state without issues', () => {
+  it('hides when ready', () => {
     useWorkspaceStore.setState({ readiness: readyResult });
     render(<ReadinessCenter />);
-    expect(screen.getByText('所有条件已就绪，可以执行。')).toBeTruthy();
     expect(screen.queryByText('思考模型未配置')).toBeNull();
+    expect(screen.queryByLabelText('执行就绪检查')).toBeNull();
   });
 });

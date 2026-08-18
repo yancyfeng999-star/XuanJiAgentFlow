@@ -48,6 +48,14 @@ const makeClient = () => ({
   getPlannerConfig: vi.fn().mockResolvedValue({ base_url: null, model: null, credential_key: null, credential_configured: false }), setPlannerConfig: vi.fn(),
   listThinkingModels: vi.fn().mockResolvedValue({ items: [] }),
   createThinkingModel: vi.fn(), updateThinkingModel: vi.fn(), deleteThinkingModel: vi.fn(), setDefaultThinkingModel: vi.fn(),
+  getReadiness: vi.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-08-19T00:00:00Z',
+    projectId: 'project-1',
+    workflowId: 'workflow-1',
+    checks: {},
+    issues: [],
+  }),
 }) as unknown as CoordinatorClient;
 
 describe('workspace store', () => {
@@ -66,7 +74,8 @@ describe('workspace store', () => {
     expect(store.getState().projects).toEqual([project]);
     expect(store.getState().project?.name).toBe('Server project');
     expect(store.getState().workflow?.id).toBe('workflow-1');
-    expect(client.getProjectWorkflow).toHaveBeenCalledWith('project-1');
+    expect(client.getProjectWorkflow).toHaveBeenCalled();
+    expect(client.getReadiness).toHaveBeenCalled();
   });
 
   it('replaces the active workflow after planning', async () => {
@@ -427,6 +436,97 @@ describe('workspace store', () => {
     expect(client.updateWorkflow).not.toHaveBeenCalled();
     await store.getState().setTaskDependencies('write', ['research']);
     expect(client.updateWorkflow).toHaveBeenCalled();
+  });
+
+  it('starts project, node and thinking-model loads in the same turn and skips readiness without a project', async () => {
+    const started: string[] = [];
+    vi.mocked(client.listProjects).mockImplementation(() => {
+      started.push('projects');
+      return Promise.resolve([]);
+    });
+    vi.mocked(client.listNodes).mockImplementation(() => {
+      started.push('nodes');
+      return Promise.resolve([]);
+    });
+    vi.mocked(client.listThinkingModels).mockImplementation(() => {
+      started.push('models');
+      return Promise.resolve({ items: [] });
+    });
+    const store = createWorkspaceStore(() => client);
+    const pending = store.getState().bootstrapWorkspace();
+    expect(started).toEqual(['projects', 'nodes', 'models']);
+    await pending;
+    expect(client.getReadiness).not.toHaveBeenCalled();
+  });
+
+  it('loads project, workflow, runs and readiness in parallel once a project is known', async () => {
+    const order: string[] = [];
+    vi.mocked(client.getProject).mockImplementation(async () => {
+      order.push('project');
+      return project;
+    });
+    vi.mocked(client.getProjectWorkflow).mockImplementation(async () => {
+      order.push('workflow');
+      return workflow;
+    });
+    vi.mocked(client.listProjectRuns).mockImplementation(async () => {
+      order.push('runs');
+      return { runs: [], next_cursor: null };
+    });
+    vi.mocked(client.getReadiness).mockImplementation(async () => {
+      order.push('readiness');
+      return {
+        ready: true, checkedAt: '', projectId: project.id, workflowId: workflow.id, checks: {}, issues: [],
+      };
+    });
+    const store = createWorkspaceStore(() => client);
+    const pending = store.getState().loadProject('project-1');
+    expect(order).toEqual(['project', 'workflow', 'runs', 'readiness']);
+    await pending;
+  });
+
+  it('aborts the previous project load and ignores AbortError', async () => {
+    const signals: AbortSignal[] = [];
+    const p2 = { ...project, id: 'project-2', name: 'P2' };
+    vi.mocked(client.getProject).mockImplementation((id, options) => {
+      if (options?.signal) signals.push(options.signal);
+      if (id === 'project-1') {
+        return new Promise((_, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            const error = new Error('Aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        });
+      }
+      return Promise.resolve(p2);
+    });
+    vi.mocked(client.getProjectWorkflow).mockResolvedValue({ ...workflow, id: 'workflow-2', project_id: 'project-2' });
+    const store = createWorkspaceStore(() => client);
+    const first = store.getState().loadProject('project-1');
+    await store.getState().loadProject('project-2');
+    await first;
+    expect(signals[0]?.aborted).toBe(true);
+    expect(store.getState().project?.id).toBe('project-2');
+    expect(store.getState().error).toBeNull();
+  });
+
+  it('coalesces readiness refreshes in a 150ms trailing window', async () => {
+    vi.useFakeTimers();
+    const store = createWorkspaceStore(() => client);
+    store.setState({ project, workflow });
+    vi.mocked(client.getReadiness).mockClear();
+    store.getState().scheduleReadinessRefresh('task');
+    store.getState().scheduleReadinessRefresh('task');
+    store.getState().scheduleReadinessRefresh('node');
+    store.getState().scheduleReadinessRefresh('thinking_model');
+    expect(client.getReadiness).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(client.getReadiness).toHaveBeenCalledTimes(1);
+    expect(client.getReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'project-1', workflowId: 'workflow-1' }),
+    );
+    vi.useRealTimers();
   });
 });
 
