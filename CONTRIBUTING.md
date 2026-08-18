@@ -37,6 +37,12 @@ bash scripts/verify-all.sh --skip-tauri-build
 
 测试输出、`target/`、`dist/`、`.venv/`、数据库、日志和运行项目不应提交。
 
+### E2E 隔离栈
+
+默认 Playwright 与 `scripts/verify-all.sh` 会自建并在结束后销毁隔离的 Coordinator / Vite 测试栈，不会复用本机已有服务。`verify-all` 还会为 Coordinator 和 Vite 分配互不相同的空闲端口。
+
+仅在调试时可以显式设置 `E2E_REUSE_EXISTING_SERVER=1` 复用已有栈。复用前必须确认 `E2E_COORDINATOR_PORT`、`E2E_VITE_PORT` 和数据目录属于当前调试会话，避免接到陈旧进程或共享数据。
+
 ## 提交流程
 
 1. 先在 Issue 或讨论中说明问题、预期行为和影响范围。

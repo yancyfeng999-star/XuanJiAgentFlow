@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { I18nProvider } from '../../../lib/i18n';
+import I18nProvider from '../../../lib/I18nProvider';
 import RecoveryPanel from '../RecoveryPanel';
 
 describe('RecoveryPanel', () => {

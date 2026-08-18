@@ -48,7 +48,7 @@ test.describe('node setup journeys', () => {
     await request.delete(`${coordinatorUrl()}/api/nodes/${nodeId}`);
   });
 
-  test('project rename and delete flow via API-backed UI', async ({ page, request }) => {
+  test('project rename and delete flow via API-backed UI', async ({ page }) => {
     await ensureWorkspaceReady(page);
     await openProjectsPanel(page);
     const name = `E2E Project ${Date.now()}`;

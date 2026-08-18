@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { redactLogText } from '../TaskLog';
+import { redactLogText } from '../taskLogRedaction';
 
 describe('log redaction', () => {
   it('redacts bearer tokens, api keys, hashes, session tokens and home paths', () => {

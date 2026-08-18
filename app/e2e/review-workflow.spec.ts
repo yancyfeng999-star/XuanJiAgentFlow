@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-import { apiCreateProject, apiPlan, apiReview, coordinatorUrl, ensureWorkspaceReady, selectProject } from './helpers';
+import {
+  acknowledgePreparedReview,
+  apiCreateProject,
+  apiPlan,
+  apiReview,
+  coordinatorUrl,
+  ensureWorkspaceReady,
+  selectProject,
+} from './helpers';
 
 test.describe('review workspace with immutable snapshots', () => {
   test('UI review binds snapshot and revision reopens editing', async ({ page, request }) => {
@@ -12,11 +20,8 @@ test.describe('review workspace with immutable snapshots', () => {
 
     await page.getByRole('button', { name: '审核工作流' }).click();
     const dialog = page.getByRole('dialog', { name: '审核工作流' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByText('快照哈希')).toBeVisible();
-    const ack = dialog.getByLabel('我已阅读并接受以上全部警告');
-    if (await ack.count()) await ack.check();
-    await dialog.getByRole('button', { name: '确认审核' }).click();
+    const confirmReview = await acknowledgePreparedReview(dialog);
+    await confirmReview.click();
     await expect(page.getByText('已审核，编辑已冻结')).toBeVisible({ timeout: 10_000 });
 
     const reviewed = await (

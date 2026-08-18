@@ -24,6 +24,8 @@ XuanJiAgentFlow（璇玑）包含本地 Coordinator、浏览器前端、Tauri �
 
 普通贡献者只需运行浏览器开发、前端测试、Rust 测试和 API 测试。默认不要执行 `npm run tauri dev`、`npm run build:tauri` 或任何会在本机注册 `.app` 的命令；它们会制造 LaunchServices 重复条目，并不属于普通 PR 的必要证据。
 
+默认 E2E（`cd app && npm run test:e2e` 与 `scripts/verify-all.sh`）会自建并销毁隔离的 Coordinator / Vite 测试栈。仅调试时可显式设置 `E2E_REUSE_EXISTING_SERVER=1` 复用已有服务；复用前必须确认端口和数据目录属于当前调试会话。
+
 桌面 `.app`、DMG、PKG、更新包、签名和公证属于发布流程，应在隔离的发布环境中生成，并在 Pull Request 中单独说明版本、架构、哈希和外部验收状态。仓库中的历史安装资产不等于当前可发布或已公证版本。
 
 ## 不应提交的内容

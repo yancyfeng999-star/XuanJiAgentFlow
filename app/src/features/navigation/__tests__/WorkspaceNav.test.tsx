@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { I18nProvider } from '../../../lib/i18n';
+import I18nProvider from '../../../lib/I18nProvider';
 import { useWorkspaceStore } from '../../../store/workspaceStore';
 import WorkspaceNav from '../WorkspaceNav';
 

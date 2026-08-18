@@ -92,9 +92,21 @@ if [[ "$SKIP_E2E" == false ]]; then
       mv "$APP_DIR/playwright-report" "$ROOT/.tmp-build-backups/playwright-report.bak.$$"
     fi
     export XUANJI_PYTHON="$PY"
-    export E2E_COORDINATOR_PORT="${E2E_COORDINATOR_PORT:-18080}"
-    export E2E_VITE_PORT="${E2E_VITE_PORT:-5173}"
+    find_free_port() {
+      "$PY" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+    }
+
+    export E2E_COORDINATOR_PORT="${E2E_COORDINATOR_PORT:-$(find_free_port)}"
+    export E2E_VITE_PORT="${E2E_VITE_PORT:-$(find_free_port)}"
+    if [[ "$E2E_COORDINATOR_PORT" == "$E2E_VITE_PORT" ]]; then
+      export E2E_VITE_PORT="$(find_free_port)"
+    fi
+    if [[ "$E2E_COORDINATOR_PORT" == "$E2E_VITE_PORT" ]]; then
+      echo "E2E coordinator and Vite ports must be distinct: ${E2E_COORDINATOR_PORT}" >&2
+      exit 1
+    fi
     export E2E_COORDINATOR_URL="http://127.0.0.1:${E2E_COORDINATOR_PORT}"
+    export E2E_REUSE_EXISTING_SERVER=0
     (cd "$APP_DIR" && npm run test:e2e)
   else
     echo "Frontend E2E verification failed: Playwright configuration not found." >&2

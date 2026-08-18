@@ -3,39 +3,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { CoordinatorError } from '../../lib/client';
 import { useT } from '../../lib/i18n';
 import { getWorkspaceClient, useWorkspaceStore } from '../../store/workspaceStore';
+import { logText, redactLogText } from './taskLogRedaction';
 
-export interface TaskLogProps {
+interface TaskLogProps {
   runId: string;
   taskId: string;
-}
-
-const SECRET_PATTERNS = [
-  /Bearer\s+[A-Za-z0-9._~+/-]+/gi,
-  /\bsk-[A-Za-z0-9_-]{8,}/g,
-  /\b[0-9a-f]{64}\b/g,
-  /XUANJI_SESSION_TOKEN=\S+/g,
-  /\/Users\/[^/\s]+/g,
-];
-
-export function redactLogText(line: string): string {
-  let redacted = line;
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, (match) =>
-      match.startsWith('/Users/') ? '~' : '[已脱敏]',
-    );
-  }
-  return redacted;
-}
-
-function logText(event: Record<string, unknown>, index: number): string {
-  if (typeof event.message === 'string') return event.message;
-  if (typeof event.text === 'string') return event.text;
-  if (typeof event.line === 'string') return event.line;
-  try {
-    return JSON.stringify(event);
-  } catch {
-    return `log-${index}`;
-  }
 }
 
 export default function TaskLog({ runId, taskId }: TaskLogProps) {

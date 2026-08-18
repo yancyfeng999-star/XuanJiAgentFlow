@@ -2,6 +2,32 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **完成度证据（2026-08-18，实现者自检 / owner self-check）：**
+> 见 [`docs/reviews/2026-08-18-final-remediation-verification.md`](../../reviews/2026-08-18-final-remediation-verification.md)。
+> 下列 Task 0–13 历史复选框**不**批量改成 `[x]`。独立审核、App 运行与 Release 仍未验证。
+
+### Task 0–13 完成矩阵（2026-08-18）
+
+只用 `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified`。
+`tests_passed` 指 2026-08-18 无 App 门禁中的自动化覆盖，不是 VoiceOver / 真实 updater / 已安装包。
+
+| Task | 主题 | 完成度 |
+| --- | --- | --- |
+| 0 | 基线与无 App 门禁 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 1 | 视觉 token / 字阶 / 主题 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 2 | 工作区骨架 / 导航 / 设置 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 3 | 卡片选中清晰度 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 4 | 五标签检查器 / 任务合同 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 5 | 思考模型领域 / API / 迁移 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 6 | Responses/Chat 适配器 / 快照 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 7 | 思考模型前端 / 默认 / 生成 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 8 | 用户可控更新 / 原生菜单 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 9 | 反馈 / 诊断 / 帮助 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 10 | 迁移备份 / 安全启动恢复 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 11 | 无障碍 / 响应式 / 性能 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 12 | Apache-2.0 文档与治理 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+| 13 | 浏览器集成 / 证据归档 / 独立审核交接 | `source_present` / `tests_passed` / `runtime_unverified` / `release_unverified` |
+
 **Goal:** 在不推翻现有三栏工作流架构的前提下，完成 Codex 风格产品基础重构、多个思考模型、用户可控更新、完整任务检查器、诊断帮助和开源治理，并保留当前候选基线中已经完成的安全与运行能力。
 
 **Architecture:** 前端继续使用 React + Zustand + React Flow，以统一 token 和 feature service 重组 UI；后端在现有 FastAPI、SQLite `app_config`、`CredentialStore` 和 PlannerService 上增加思考模型注册表与 Responses/Chat 双适配器；Tauri 仅承担原生菜单、Updater 和系统桥接。新能力沿用当前 resource-level pending actions、审核修订、服务端 `allowed_actions`、一次性会话 ticket、Header/Blob 产物下载和 SQLite 备份，不建立平行实现。

@@ -11,7 +11,7 @@ import ProjectRail from '../features/projects/ProjectRail';
 import RunBar from '../features/runs/RunBar';
 import SettingsShell from '../features/settings/SettingsShell';
 import { getCoordinatorStatus, restartCoordinator, waitForHealthyRuntime, type RuntimeInfo } from '../lib/runtime';
-import { bindNativeUpdateMenu, getUpdateService } from '../lib/updater';
+import { bindNativeUpdateMenu, getUpdateService, isRunBlockingRelaunch } from '../lib/updater';
 import './AppShell.css';
 
 type BootState =
@@ -56,7 +56,9 @@ export default function AppShell() {
     void import('@tauri-apps/api/event')
       .then(({ listen }) => bindNativeUpdateMenu({
         listen: (event, handler) => listen(event, handler).then((stop) => () => { stop(); }),
-        check: () => getUpdateService().check(),
+        check: () => getUpdateService().applyAndRelaunch({
+          canRelaunch: () => !isRunBlockingRelaunch(useWorkspaceStore.getState().runStatus),
+        }),
         openUpdates: () => {
           setActivePanel('settings');
           setSettingsSection('updates');
