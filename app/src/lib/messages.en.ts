@@ -80,7 +80,7 @@ export const messages: Record<string, string> = {
   'settings.theme': 'Theme',
   'settings.language': 'Language',
   'settings.executionHint': 'Node registration, diagnostics, and provisioning stay on the Nodes page.',
-  'settings.aboutCopy': 'XuanJi is a local AI task console. 0.3.4 is source metadata, not a released installer.',
+  'settings.aboutCopy': 'XuanJi is a local AI task console. Source version 0.3.5. Installers follow the GitHub Release.',
   'thinking.empty': 'No thinking models yet. Save the form below to create the default profile.',
   'thinking.default': 'Default',
   'thinking.keySet': 'Key configured',

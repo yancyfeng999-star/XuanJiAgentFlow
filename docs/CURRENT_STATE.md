@@ -3,7 +3,7 @@
 > 能力验证日期：2026-08-18（`2fb462d90d63542437971d76736db1ac1b4bd4c8`，两轮 `scripts/verify-all.sh --skip-tauri-build` + 独立 `npm run test:e2e` 均为退出码 0）
 > 事实核对日期：2026-08-18
 > 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁。只记录**已验证**能力。状态为本地实现/测试候选（**实现者自检**），**不代表**已发布、已安装或独立审核通过。
-> 完整命令、警告与未验证层级：[`docs/reviews/2026-08-18-final-remediation-verification.md`](reviews/2026-08-18-final-remediation-verification.md)。远端最新 Release 仍为 **`v0.3.3`**；`0.3.4` 仅为源码元数据。Tauri / 桌面 App **未构建**。
+> 完整命令、警告与未验证层级：[`docs/reviews/2026-08-18-final-remediation-verification.md`](reviews/2026-08-18-final-remediation-verification.md)。源码包版本 **0.3.5**。远端用户安装包仍为 **`v0.3.3`**。Tauri / 桌面 App **未为 0.3.5 重建**。
 
 > 开源协作提示：本文包含历史桌面包验证证据，不是普通贡献者的构建指令。当前开发和 PR 验证默认不生成或启动 macOS `.app`；请遵循 [`docs/OPEN_SOURCE.md`](OPEN_SOURCE.md) 与 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 的隔离发布边界。
 
