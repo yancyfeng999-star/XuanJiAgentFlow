@@ -8,7 +8,7 @@
 
 | 名称 | 当前值 | 事实源 |
 | --- | --- | --- |
-| 产品 / 包版本 | 0.3.5 源码；用户安装包仍为 0.3.3 | `app/package.json`、`release/README.md` |
+| 产品 / 包版本 | 0.3.6 源码与安装包 | `app/package.json`、GitHub Release `v0.3.6` |
 | Coordinator API 版本 | 3.0.0 | `backend/src/xuanji/api/app.py`（`GET /api/status`） |
 | 数据 schema 版本 | 7 | `backend/src/xuanji/storage/migrations.py` `CURRENT_SCHEMA_VERSION` |
 | 产品方向 | 3.0（真执行闭环） | `docs/PRODUCT.md` |

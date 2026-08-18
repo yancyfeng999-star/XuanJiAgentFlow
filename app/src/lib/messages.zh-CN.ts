@@ -82,7 +82,7 @@ export const messages: Record<string, string> = {
   'settings.theme': '主题',
   'settings.language': '语言',
   'settings.executionHint': '节点登记、诊断和部署仍在“节点”页面完成。',
-  'settings.aboutCopy': '璇玑是本地运行的 AI 任务控制台。当前源码版本 0.3.5。安装包以 GitHub Release 为准。',
+  'settings.aboutCopy': '璇玑是本地运行的 AI 任务控制台。当前源码版本 0.3.6。安装包以 GitHub Release 为准。',
   'thinking.empty': '还没有思考模型。保存下方表单即可创建默认配置。',
   'thinking.default': '默认',
   'thinking.keySet': '密钥已配置',
