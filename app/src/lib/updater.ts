@@ -183,15 +183,15 @@ export function createUpdateService(adapter: UpdaterAdapter): UpdateService {
 
 function reportDownloadProgress(
   onProgress: (progress: number | null) => void,
-): (event: { event: string; data: { chunkLength?: number; contentLength?: number } }) => void {
+): (event: { event: string; data?: { chunkLength?: number; contentLength?: number } }) => void {
   let total = 0;
   let received = 0;
   return (event) => {
-    if (event.event === 'Started' && event.data.contentLength) {
+    if (event.event === 'Started' && event.data?.contentLength) {
       total = event.data.contentLength;
       received = 0;
     }
-    if (event.event === 'Progress' && event.data.chunkLength) {
+    if (event.event === 'Progress' && event.data?.chunkLength) {
       received += event.data.chunkLength;
       onProgress(total > 0 ? received / total : null);
     }
