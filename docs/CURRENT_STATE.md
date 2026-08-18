@@ -113,9 +113,9 @@ E2E 使用 `scripts/e2e_stack.py` 启动 Coordinator + 2 个 FakeNode HTTP 服�
 
 ## 构建产物说明
 
-- 本地 ad-hoc 签名 macOS **可安装 DMG / PKG** 已构建并归档：
-  - DMG: `release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg`
-  - PKG: `release/xuanji-0.3.3-20260811/璇玑-0.3.3.pkg`
+- 本地 ad-hoc 签名 macOS **可安装 DMG / PKG** 已构建：
+  - 当前：GitHub Release `v0.3.6` 的 `XuanJi_0.3.6_aarch64.dmg` / `XuanJi-0.3.6.pkg`
+  - 历史：`release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg` 与对应 PKG
   - 校验值见 `release/README.md`
 - `release/archive/` 只保存历史候选版本；当前安装请以 `release/README.md` 为准。
 - Sidecar：PyInstaller 单文件 `xuanji-coordinator`（Mach-O arm64）随应用打包，不依赖系统 Python。

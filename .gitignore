@@ -47,3 +47,6 @@ app/src-tauri/src-tauri/target-fresh/
 backend/build/
 backend/dist/
 *.spec.bak
+
+# Local 0.3.6+ installer copies (publish via GitHub Release, do not commit binaries)
+release/xuanji-0.3.6-20260819/

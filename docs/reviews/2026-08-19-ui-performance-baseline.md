@@ -47,7 +47,7 @@
 | 就绪详情是否改画布高度 | 是（flex 挤压） | 否（覆盖层） | ui-layout |
 | 无上下文 Inspector 宽 | 360px | 0 | AppShell test |
 | 启动 readiness 无 project | 会发 | 不发 | workspaceStore test |
-| shell_mounted | 未标记 | ≤200ms（Playwright evaluate） | ui-performance |
+| shell_mounted | 未标记 | 本地 ≤200ms；CI ≤800ms（Playwright evaluate） | ui-performance |
 | 项目可交互 p50/p95 | 未采样 | 未做 20 次冷启动；结构门禁已过 | `app_runtime_unverified` |
 | 项目切换 p95 | 未采样 | 结构断言通过（abort + 骨架） | workspaceStore + ui-performance |
 | Inspector 出现 p95 | 未采样 | 选中后出现；无上下文不占宽 | AppShell + Inspector tests |
