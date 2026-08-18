@@ -82,8 +82,8 @@ test('product foundation journey covers models, inspector, review, update check,
   await page.getByRole('tab', { name: '更新' }).click();
   await page.getByRole('button', { name: '检查更新' }).click();
   await expect(page.getByTestId('update-state')).toHaveText('desktop_only');
-  await expect(page.getByRole('button', { name: '下载更新' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: '安装并重启' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '下载更新' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '安装并重启' })).toHaveCount(0);
 
   await page.getByRole('tab', { name: '诊断与帮助' }).click();
   await page.getByRole('button', { name: '运行诊断' }).click();

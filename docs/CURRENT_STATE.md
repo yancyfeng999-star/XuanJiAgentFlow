@@ -36,7 +36,7 @@
 | 画布卡片清晰度 | Playwright | 选中/悬停无自身 transform |
 | 五标签检查器 | vitest + Playwright | 提示词与输入保存后 API 可见；审核后只读 + 修订 |
 | 思考模型 | pytest + vitest + Playwright | 双协议、唯一默认、密钥不回传；就绪文案不再写「规划器」 |
-| 更新状态机 | vitest + Playwright | 检查不下载不安装；浏览器显示 desktop-only |
+| 更新状态机 | vitest + Playwright | 启动不自动更新；「检查更新」发现新版本后下载、退出、静默安装并重开；运行中拦住；浏览器显示 desktop-only |
 | 诊断脱敏 | pytest + vitest + Playwright | 支持摘要不含 Authorization / 密钥 / 完整 home 路径 |
 | 开源文档 | `check-open-source-docs.sh` | Apache-2.0 / NOTICE / 模板与 verify.yml 挂钩 |
 

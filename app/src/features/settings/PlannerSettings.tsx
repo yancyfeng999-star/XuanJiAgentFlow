@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, Languages, ShieldCheck } from 'lucide-react';
 
 import { useI18n, type Locale } from '../../lib/i18n';
-import { checkForUpdateManually, isAutoUpdateEnabled, relaunchApp, setAutoUpdateEnabled } from '../../lib/updater';
+import { checkForUpdateManually, isRunBlockingRelaunch, relaunchApp } from '../../lib/updater';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 
 const ISSUES_URL = 'https://github.com/yancyfeng999-star/XuanJiAgentFlow/issues';
@@ -17,7 +17,6 @@ export default function PlannerSettings() {
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [plannerHint, setPlannerHint] = useState('');
-  const [autoUpdate, setAutoUpdate] = useState<boolean>(() => isAutoUpdateEnabled());
   const [appVersion, setAppVersion] = useState('');
   const [updateState, setUpdateState] = useState<
     | { phase: 'idle' }
@@ -29,7 +28,9 @@ export default function PlannerSettings() {
 
   const checkNow = async () => {
     setUpdateState({ phase: 'checking' });
-    const result = await checkForUpdateManually();
+    const result = await checkForUpdateManually({
+      canRelaunch: () => !isRunBlockingRelaunch(useWorkspaceStore.getState().runStatus),
+    });
     if (result.kind === 'up-to-date') setUpdateState({ phase: 'up-to-date' });
     else if (result.kind === 'installed') {
       setUpdateState({ phase: 'installed', version: result.version, relaunchBlocked: result.relaunchBlocked });
@@ -101,19 +102,7 @@ export default function PlannerSettings() {
       </div>
       <div className="settings-card form-grid">
         <h2><Download size={18} />{t('updates.title')}</h2>
-        <label className="check-row" htmlFor="auto-update">
-          <input
-            id="auto-update"
-            type="checkbox"
-            checked={autoUpdate}
-            onChange={(event) => {
-              setAutoUpdate(event.target.checked);
-              setAutoUpdateEnabled(event.target.checked);
-            }}
-          />
-          {t('updates.auto')}
-        </label>
-        <p className="muted">{t('updates.autoHint')}</p>
+        <p className="muted">{t('update.manualHint')}</p>
         {appVersion && <p className="muted">{t('updates.currentVersion')}：{appVersion}</p>}
         <button type="button" onClick={() => void checkNow()} disabled={updateState.phase === 'checking'}>
           {updateState.phase === 'checking' ? t('updates.checking') : t('updates.checkNow')}
