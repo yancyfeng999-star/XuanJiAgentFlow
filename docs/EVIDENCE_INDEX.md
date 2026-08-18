@@ -39,7 +39,8 @@
 | 0.3.1→0.3.2→0.3.3 升级 | `update` | 2026-08-11 | 真实 GitHub Release 链路 | `release/README.md` 记录 | 历史记录，候选版本需重验 |
 | 候选实现（ux-integration） | `test` | 2026-08-12 | 候选分支 `candidate/ux-integration`（macOS 26.6.1 arm64） | `bash scripts/verify-all.sh --skip-tauri-build` | 全绿：backend 187 / node-agent 29 / vitest 72 / e2e 27 / cargo 13；其余层级见 `docs/releases/0.3.4-candidate-acceptance.md` 第 5 节 |
 | 2026-08-14 Codex 基线 | `test` | 2026-08-14 | `77a50b8caa6db54f3c95f1025cf05a6f6c3c524b`（含 `3232479e7a1e704a9ceddcee137e3ca256e55543`） | `bash scripts/verify-all.sh --skip-tauri-build` | 退出码 0：backend 191 / node-agent 29 / vitest 72 / e2e 27 / cargo 14；Tauri build 未跑。见 `docs/reviews/2026-08-14-codex-style-baseline.md` |
-| 2026-08-14 Codex 产品基础候选 | `test` | 2026-08-14 | `agent/xuanji-logo-menu-status-github`（含 `3232479`） | `bash scripts/verify-all.sh --skip-tauri-build` | 退出码 0：backend 199 / node-agent 29 / vitest 97 / e2e 31 / cargo 16；docs check 通过；Tauri build 未跑。**不是**已发布/已安装。见 `docs/reviews/2026-08-14-codex-style-implementation-review.md` |
+| 2026-08-14 Codex 产品基础候选 | `test` | 2026-08-14 | `agent/xuanji-logo-menu-status-github`（含 `3232479`） | `bash scripts/verify-all.sh --skip-tauri-build` | 退出码 0：backend 199 / node-agent 29 / vitest 97 / e2e 31 / cargo 16；docs check 通过；Tauri build 未跑。**不是**已发布/已安装。见 `docs/reviews/2026-08-14-codex-style-implementation-review.md`。**计数已被 2026-08-18 行取代**（该文历史声明保留） |
+| 2026-08-18 最终补救无 App 门禁 | `test` | 2026-08-18 | `2fb462d90d63542437971d76736db1ac1b4bd4c8`（macOS 26.6.1 arm64） | 连续两轮 `bash scripts/verify-all.sh --skip-tauri-build` + 独立 `cd app && npm run test:e2e` | 三轮退出码 0：backend 200 / node-agent 29 / vitest 103 / e2e 32 / cargo 16；lint 0；prod+full audit 0 vuln；Tauri **SKIPPED**。实现者自检，**不是**独立审核 / 已发布 / 已安装。见 `docs/reviews/2026-08-18-final-remediation-verification.md` |
 
 ## 4. 所有者资产 SHA-256 清单（2026-08-12 生成）
 

@@ -1,9 +1,12 @@
 # Codex-style product foundation · implementation review
 
-> 日期：2026-08-14  
-> 状态：本地实现/测试候选。**不是**已发布、已安装、已签名/公证，也**不是**独立审核通过。  
-> 基线：`3232479e7a1e704a9ceddcee137e3ca256e55543` 的后代（`agent/xuanji-logo-menu-status-github`）。  
-> 验证命令：`bash scripts/verify-all.sh --skip-tauri-build`  
+> **Superseded（当前计数与结论）：** 2026-08-18 实现者自检见 [`2026-08-18-final-remediation-verification.md`](2026-08-18-final-remediation-verification.md)。
+> 下文 2026-08-14 的失败/未验证声明与当时计数**原样保留**，不追溯改写成已通过或已发布。
+
+> 日期：2026-08-14
+> 状态：本地实现/测试候选。**不是**已发布、已安装、已签名/公证，也**不是**独立审核通过。
+> 基线：`3232479e7a1e704a9ceddcee137e3ca256e55543` 的后代（`agent/xuanji-logo-menu-status-github`）。
+> 验证命令：`bash scripts/verify-all.sh --skip-tauri-build`
 > 验证结果：退出码 0。backend 199 / node-agent 29 / vitest 97 / e2e 31 / cargo 16。Tauri build 未跑。
 
 ## 需求对照
