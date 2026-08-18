@@ -90,7 +90,30 @@ describe('ReviewWorkspace', () => {
     fireEvent.click(screen.getByLabelText('我已阅读并接受以上全部警告'));
     fireEvent.click(confirm);
     await screen.findByText('工作流在审核准备后已被修改。');
-    fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新加载审核' }));
     await waitFor(() => expect(client.prepareReview).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps acknowledgement when the same prepared snapshot is delivered again', async () => {
+    render(<ReviewWorkspace onClose={vi.fn()} />);
+    const checkbox = await screen.findByLabelText('我已阅读并接受以上全部警告');
+    fireEvent.click(checkbox);
+    expect(screen.getByRole('button', { name: '确认审核' })).toBeEnabled();
+
+    vi.mocked(client.prepareReview).mockResolvedValue({ ...prepared });
+    fireEvent.click(screen.getByRole('button', { name: '重新加载审核' }));
+    await waitFor(() => expect(client.prepareReview).toHaveBeenCalledTimes(2));
+    expect(checkbox).toBeChecked();
+    expect(screen.getByRole('button', { name: '确认审核' })).toBeEnabled();
+  });
+
+  it('requires acknowledgement again when the snapshot hash changes', async () => {
+    render(<ReviewWorkspace onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByLabelText('我已阅读并接受以上全部警告'));
+    vi.mocked(client.prepareReview).mockResolvedValue({ ...prepared, snapshot_hash: 'c'.repeat(64) });
+    fireEvent.click(screen.getByRole('button', { name: '重新加载审核' }));
+    await waitFor(() => expect(client.prepareReview).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('我已阅读并接受以上全部警告')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: '确认审核' })).toBeDisabled();
   });
 });

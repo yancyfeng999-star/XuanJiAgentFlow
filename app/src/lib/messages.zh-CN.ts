@@ -443,6 +443,7 @@ export const messages: Record<string, string> = {
   'review.ackWarnings': '我已阅读并接受以上全部警告',
   'review.stale': '工作流在审核准备后已被修改。',
   'review.reload': '重新加载',
+  'review.reloadPrepared': '重新加载审核',
   'review.cancel': '取消',
   'review.confirm': '确认审核',
   'review.createRevision': '创建修订',

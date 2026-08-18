@@ -443,6 +443,7 @@ export const messages: Record<string, string> = {
   'review.ackWarnings': 'I have read and accept all warnings above',
   'review.stale': 'The workflow changed after this review was prepared.',
   'review.reload': 'Reload',
+  'review.reloadPrepared': 'Reload review',
   'review.cancel': 'Cancel',
   'review.confirm': 'Confirm review',
   'review.createRevision': 'Create revision',

@@ -13,14 +13,21 @@ export default function ReviewWorkspace({ onClose }: { onClose: () => void }) {
   const reviewing = useWorkspaceStore((state) =>
     state.pendingActions.some((action) => action.kind === 'review'));
   const [prepared, setPrepared] = useState<ReviewPrepareResult | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const [acknowledgedSnapshotHash, setAcknowledgedSnapshotHash] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const prepareRequestRef = useRef(0);
+  const acknowledged = prepared !== null && acknowledgedSnapshotHash === prepared.snapshot_hash;
 
   const reload = useCallback(async () => {
     setStale(false);
-    setAcknowledged(false);
-    setPrepared(await prepareReview());
+    const requestId = ++prepareRequestRef.current;
+    const nextPrepared = await prepareReview();
+    if (requestId !== prepareRequestRef.current) return;
+    setPrepared(nextPrepared);
+    setAcknowledgedSnapshotHash((current) =>
+      current === nextPrepared?.snapshot_hash ? current : null,
+    );
   }, [prepareReview]);
 
   useEffect(() => {
@@ -160,7 +167,9 @@ export default function ReviewWorkspace({ onClose }: { onClose: () => void }) {
                     id="ack-warnings"
                     type="checkbox"
                     checked={acknowledged}
-                    onChange={(event) => setAcknowledged(event.target.checked)}
+                    onChange={(event) => {
+                      setAcknowledgedSnapshotHash(event.target.checked && prepared ? prepared.snapshot_hash : null);
+                    }}
                   />
                   {t('review.ackWarnings')}
                 </label>
@@ -169,12 +178,14 @@ export default function ReviewWorkspace({ onClose }: { onClose: () => void }) {
             {stale && (
               <p className="review-stale" role="alert">
                 {t('review.stale')}
-                <button type="button" onClick={() => void reload()}>{t('review.reload')}</button>
               </p>
             )}
           </div>
         )}
         <footer className="review-actions">
+          <button type="button" onClick={() => void reload()} disabled={!prepared}>
+            {t('review.reloadPrepared')}
+          </button>
           <button type="button" onClick={onClose}>{t('review.cancel')}</button>
           <button
             type="button"
