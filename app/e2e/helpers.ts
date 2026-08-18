@@ -1,19 +1,8 @@
 import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+import { coordinatorUrl } from './coordinator-url';
 
-export function coordinatorUrl(): string {
-  if (process.env.E2E_COORDINATOR_URL) return process.env.E2E_COORDINATOR_URL;
-  const statePath = path.join(root, '.e2e', 'stack.json');
-  if (fs.existsSync(statePath)) {
-    const meta = JSON.parse(fs.readFileSync(statePath, 'utf8')) as { coordinator_url: string };
-    return meta.coordinator_url;
-  }
-  return `http://127.0.0.1:${process.env.E2E_COORDINATOR_PORT ?? '18080'}`;
-}
+export { coordinatorUrl };
 
 export async function waitForRun(
   request: APIRequestContext,
