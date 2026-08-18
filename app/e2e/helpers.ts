@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,4 +103,20 @@ export async function selectProject(page: Page, projectId: string) {
   await openProjectsPanel(page);
   await page.locator('#project-select').selectOption(projectId);
   await openWorkflowPanel(page);
+}
+
+/** Wait for review/prepare, then ack warnings if shown. Does not click confirm. */
+export async function acknowledgePreparedReview(dialog: Locator) {
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '重新加载审核' })).toBeEnabled();
+  await expect(dialog.getByText('快照哈希')).toBeVisible();
+  const ack = dialog.getByLabel('我已阅读并接受以上全部警告');
+  if (await ack.count()) {
+    await ack.scrollIntoViewIfNeeded();
+    await ack.check();
+    await expect(ack).toBeChecked();
+  }
+  const confirmReview = dialog.getByRole('button', { name: '确认审核' });
+  await expect(confirmReview).toBeEnabled();
+  return confirmReview;
 }

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  acknowledgePreparedReview,
   apiCreateProject,
   apiCreateRun,
   apiPlan,
@@ -164,14 +165,7 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     // 4) Review (freeze) — 审核工作区：确认警告后提交快照哈希
     await page.getByRole('button', { name: '审核工作流' }).click();
     const reviewDialog = page.getByRole('dialog', { name: '审核工作流' });
-    await expect(reviewDialog).toBeVisible();
-    const ack = reviewDialog.getByLabel('我已阅读并接受以上全部警告');
-    if (await ack.count()) {
-      await ack.check();
-      await expect(ack).toBeChecked();
-    }
-    const confirmReview = reviewDialog.getByRole('button', { name: '确认审核' });
-    await expect(confirmReview).toBeEnabled();
+    const confirmReview = await acknowledgePreparedReview(reviewDialog);
     await confirmReview.click();
     await expect(page.getByText('已审核，编辑已冻结')).toBeVisible({ timeout: 10_000 });
 
