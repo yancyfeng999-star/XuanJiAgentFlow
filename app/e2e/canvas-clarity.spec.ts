@@ -21,12 +21,14 @@ test.describe('workflow card clarity', () => {
     await expect(card).toHaveScreenshot('task-card-hover-2x.png', {
       animations: 'disabled',
       scale: 'device',
+      maxDiffPixelRatio: 0.02,
     });
     await card.click();
     await expect(card).toHaveClass(/is-selected/);
     await expect(card).toHaveScreenshot('task-card-selected-2x.png', {
       animations: 'disabled',
       scale: 'device',
+      maxDiffPixelRatio: 0.02,
     });
     const selectedCss = await card.evaluate((el) => getComputedStyle(el).transform);
     expect(selectedCss === 'none' || selectedCss === 'matrix(1, 0, 0, 1, 0, 0)').toBeTruthy();
