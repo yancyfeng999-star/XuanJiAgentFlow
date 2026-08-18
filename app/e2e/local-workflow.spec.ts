@@ -186,7 +186,7 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     // Wait for UI to reflect acceptance / progress
     await expect
       .poll(async () => page.locator('.run-bar .status').textContent(), { timeout: 30_000 })
-      .toMatch(/已完成|运行中|已接受|等待调度/);
+      .toMatch(/已完成|运行中|已接受/);
 
     // Verify the exact run created by the UI click; do not substitute an API-created run.
     const runId = uiRun.id;

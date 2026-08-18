@@ -11,7 +11,9 @@ import type {
   Workflow,
 } from '../../../lib/client';
 import { CoordinatorError } from '../../../lib/client';
+import I18nProvider from '../../../lib/I18nProvider';
 import { setWorkspaceClient, useWorkspaceStore } from '../../../store/workspaceStore';
+import RunBar from '../RunBar';
 import RunControls from '../RunControls';
 import TaskLog from '../TaskLog';
 import {
@@ -315,6 +317,33 @@ describe('run event reducer', () => {
 });
 
 describe('useRunEvents', () => {
+  it('RunBar keeps a live websocket for the current run and applies status events', async () => {
+    useWorkspaceStore.setState({
+      run: { ...run, status: 'pending' },
+      runStatus: 'pending',
+      runProgress: 0,
+    });
+    render(<I18nProvider><RunBar /></I18nProvider>);
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    expect(sockets[0].url).toContain('/ws/runs/run-1?last_event_id=0');
+    expect(screen.getByText('等待调度')).toBeInTheDocument();
+
+    act(() => {
+      sockets[0].open();
+      sockets[0].emit({
+        event_id: 2,
+        run_id: 'run-1',
+        type: 'run.status_changed',
+        payload: { previous: 'pending', status: 'running' },
+        created_at: '2026-07-28T00:00:01Z',
+      });
+    });
+
+    await waitFor(() => expect(useWorkspaceStore.getState().runStatus).toBe('running'));
+    expect(useWorkspaceStore.getState().run?.status).toBe('running');
+    expect(screen.getByText('运行中')).toBeInTheDocument();
+  });
+
   it('applies snapshot events then incremental events over websocket', async () => {
     render(<Probe runId="run-1" />);
     await waitFor(() => expect(sockets).toHaveLength(1));

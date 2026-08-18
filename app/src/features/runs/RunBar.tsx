@@ -5,6 +5,7 @@ import { hasMessage, useI18n } from '../../lib/i18n';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import ReviewWorkspace from '../workflow/ReviewWorkspace';
 import { deriveRunBarModel, type RunPrimaryAction } from './runBarModel';
+import { useRunEvents } from './useRunEvents';
 
 export default function RunBar({
   phase,
@@ -33,6 +34,7 @@ export default function RunBar({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const { t, locale } = useI18n();
+  useRunEvents(run?.id ?? null);
 
   const model = deriveRunBarModel({
     project,
