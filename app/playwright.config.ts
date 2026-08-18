@@ -9,6 +9,7 @@ const stackPort = Number(process.env.E2E_COORDINATOR_PORT ?? '18080');
 const vitePort = Number(process.env.E2E_VITE_PORT ?? '5173');
 const coordinatorUrl = process.env.E2E_COORDINATOR_URL
   ?? `http://127.0.0.1:${stackPort}`;
+const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === '1';
 
 function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -52,7 +53,7 @@ export default defineConfig({
     {
       command: stackCommand,
       url: `${coordinatorUrl}/api/status`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 60_000,
       stdout: 'pipe',
       stderr: 'pipe',
@@ -60,7 +61,7 @@ export default defineConfig({
     {
       command: `npm run dev -- --host 127.0.0.1 --port ${vitePort} --strictPort`,
       url: `http://127.0.0.1:${vitePort}`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 60_000,
       env: {
         ...process.env,
