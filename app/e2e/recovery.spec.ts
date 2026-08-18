@@ -280,7 +280,7 @@ test.describe('recovery and control paths', () => {
     const project = await apiCreateProject(request, `E2E Restore ${Date.now()}`);
     const workflow = await apiPlan(request, project.id);
     await apiReview(request, workflow.id);
-    const run = await apiCreateRun(request, workflow.id);
+    await apiCreateRun(request, workflow.id);
 
     await page.goto('/');
     await ensureWorkspaceReady(page);

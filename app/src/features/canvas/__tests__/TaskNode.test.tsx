@@ -6,7 +6,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { I18nProvider } from '../../../lib/i18n';
+import I18nProvider from '../../../lib/I18nProvider';
 import { TaskNode } from '../nodes/TaskNode';
 import type { WorkflowTask } from '../../../lib/client';
 import type { TaskNodeData } from '../nodeTypes';

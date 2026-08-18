@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CoordinatorClient } from '../../../lib/client';
-import { I18nProvider } from '../../../lib/i18n';
+import I18nProvider from '../../../lib/I18nProvider';
 import { setWorkspaceClient, useWorkspaceStore } from '../../../store/workspaceStore';
 import ThinkingModels from '../ThinkingModels';
 
