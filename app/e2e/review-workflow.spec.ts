@@ -30,7 +30,8 @@ test.describe('review workspace with immutable snapshots', () => {
     expect(reviewed.review_snapshot_hash).toBeTruthy();
     expect(reviewed.reviewed_by).toBe('user');
 
-    await page.getByRole('button', { name: '创建修订' }).click();
+    await page.getByRole('button', { name: '更多运行操作' }).click();
+    await page.getByRole('menuitem', { name: '创建修订' }).click();
     await expect(page.getByText('工作流版本 2')).toBeVisible({ timeout: 10_000 });
     const active = await (
       await request.get(`${coordinatorUrl()}/api/projects/${project.id}/workflow`)

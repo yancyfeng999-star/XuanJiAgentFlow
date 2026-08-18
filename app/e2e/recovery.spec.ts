@@ -291,7 +291,7 @@ test.describe('recovery and control paths', () => {
     await page.reload();
     await ensureWorkspaceReady(page);
     await selectProject(page, other.id);
-    await expect(page.getByLabel('顶部运行栏').getByText('未运行')).toBeVisible();
+    await expect(page.getByLabel('顶部运行栏').getByText('待运行')).toBeVisible();
 
     await selectProject(page, project.id);
     await expect(page.getByLabel('顶部运行栏').getByText('等待调度')).toBeVisible({ timeout: 15_000 });

@@ -42,7 +42,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   setWorkspaceClient(client);
   useWorkspaceStore.getState().resetWorkspace();
-  useWorkspaceStore.setState({ project, workflow, selectedTaskId: 't1' });
+  useWorkspaceStore.setState({
+    project,
+    workflow,
+    selectedTaskId: 't1',
+    inspectorContext: { kind: 'task', taskId: 't1' },
+    inspectorWidth: 352,
+  });
 });
 
 describe('Inspector tabs', () => {
@@ -104,6 +110,25 @@ describe('Inspector tabs', () => {
       verify: [{ kind: 'file_exists', value: 'out/report.md' }],
       run_gate: 'review_before_complete',
     });
+  });
+
+  it('resizes with pointer drag and keyboard, persisting 320–480px', () => {
+    render(<I18nProvider><Inspector /></I18nProvider>);
+    const handle = screen.getByRole('separator', { name: '调整检查器宽度' });
+    fireEvent.pointerDown(handle, { clientX: 800 });
+    fireEvent.pointerMove(window, { clientX: 732 });
+    fireEvent.pointerUp(window);
+    expect(useWorkspaceStore.getState().inspectorWidth).toBe(420);
+    expect(window.localStorage.getItem('xuanji.inspector.width')).toBe('420');
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(useWorkspaceStore.getState().inspectorWidth).toBe(436);
+    fireEvent.keyDown(handle, { key: 'ArrowRight', shiftKey: true });
+    expect(useWorkspaceStore.getState().inspectorWidth).toBe(404);
+    useWorkspaceStore.getState().setInspectorWidth(200);
+    expect(useWorkspaceStore.getState().inspectorWidth).toBe(320);
+    useWorkspaceStore.getState().setInspectorWidth(900);
+    expect(useWorkspaceStore.getState().inspectorWidth).toBe(480);
   });
 
   it('shows a revision action when the workflow is reviewed', () => {

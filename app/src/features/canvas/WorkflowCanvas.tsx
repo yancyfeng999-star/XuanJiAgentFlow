@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2, Unlink } from 'lucide-react';
 import { Background, BackgroundVariant, Controls, MiniMap, ReactFlow, useNodesState } from '@xyflow/react';
-import type { Connection, Edge } from '@xyflow/react';
+import type { Connection, ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { hasMessage, useI18n } from '../../lib/i18n';
+import { markMilestone } from '../../lib/performance';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { nodeTypes } from './nodeTypes';
 import type { WorkflowNode } from './nodeTypes';
+import { buildWorkflowEdges, buildWorkflowNodes, DEFAULT_VIEW } from './workflowGraph';
 
 type CanvasMenu =
   | { kind: 'node'; nodeId: string; x: number; y: number }
@@ -26,7 +28,12 @@ export default function WorkflowCanvas() {
   const disconnectTaskEdges = useWorkspaceStore((state) => state.disconnectTaskEdges);
   const [goal, setGoal] = useState('');
   const [menu, setMenu] = useState<CanvasMenu | null>(null);
+  const [wideEnoughForMinimap, setWideEnoughForMinimap] = useState(true);
+  const fittedWorkflowId = useRef<string | null>(null);
+  const flowRef = useRef<ReactFlowInstance<WorkflowNode> | null>(null);
   const { t, locale } = useI18n();
+  const reducedMotion = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const directionText = (direction: string) => {
     const key = `direction.${direction}`;
     return hasMessage(locale, key) ? t(key) : t('direction.unknown');
@@ -41,35 +48,29 @@ export default function WorkflowCanvas() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [menu]);
 
-  const workflowNodes = useMemo<WorkflowNode[]>(() => (workflow?.tasks ?? []).map((task) => ({
-    id: task.id,
-    type: 'task',
-    position: task.ui_position,
-    data: { ...task },
-    selected: task.id === selectedTaskId,
-  })), [selectedTaskId, workflow]);
-  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNode>(workflowNodes);
+  const attempts = useWorkspaceStore((state) => state.taskAttempts);
+  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNode>([]);
+  const persistNodePosition = (nodeId: string, position: { x: number; y: number }) => {
+    if (workflow?.status === 'draft') void updateTask(nodeId, { ui_position: position });
+  };
 
   useEffect(() => {
-    setNodes((current) => workflowNodes.map((nextNode) => {
-      const currentNode = current.find((node) => node.id === nextNode.id);
-      return currentNode?.dragging
-        ? { ...nextNode, position: currentNode.position, dragging: true }
-        : nextNode;
-    }));
-  }, [setNodes, workflowNodes]);
-
-  const edges = useMemo<Edge[]>(() => {
     const tasks = workflow?.tasks ?? [];
-    const titles = new Map(tasks.map((task) => [task.id, task.title]));
-    return tasks.flatMap((task) => task.dependencies.map((source) => ({
-      id: `${source}-${task.id}`,
-      source,
-      target: task.id,
-      animated: true,
-      ariaLabel: t('canvas.edgeAria', { source: titles.get(source) ?? source, target: task.title }),
-    })));
-  }, [t, workflow]);
+    setNodes((current) => buildWorkflowNodes(tasks, selectedTaskId, current));
+  }, [selectedTaskId, setNodes, workflow]);
+
+  const edges = useMemo(
+    () => buildWorkflowEdges(workflow?.tasks ?? [], attempts, t, reducedMotion),
+    [attempts, reducedMotion, t, workflow],
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 900px)');
+    const sync = () => setWideEnoughForMinimap(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
 
   const connect = (connection: Connection) => {
     if (connection.source && connection.target) void connectTasks(connection.source, connection.target);
@@ -126,15 +127,33 @@ export default function WorkflowCanvas() {
       }}
       onMoveStart={() => setMenu(null)}
       onNodeDragStop={(_, node) => {
-        if (workflow.status === 'draft') void updateTask(node.id, { ui_position: node.position });
+        const task = workflow.tasks.find((item) => item.id === node.id);
+        const moved = !task
+          || Math.abs(node.position.x - task.ui_position.x) > 8
+          || Math.abs(node.position.y - task.ui_position.y) > 8;
+        if (moved) persistNodePosition(node.id, node.position);
       }}
       nodesConnectable={workflow.status === 'draft'}
       nodesDraggable={workflow.status === 'draft'}
       edgesReconnectable={false}
       elementsSelectable
-      fitView
-      minZoom={0.25}
-      maxZoom={2}
+      onlyRenderVisibleElements
+      minZoom={DEFAULT_VIEW.minZoom}
+      maxZoom={DEFAULT_VIEW.maxZoom}
+      onInit={(instance) => {
+        flowRef.current = instance;
+        if (!workflow || fittedWorkflowId.current === workflow.id) return;
+        fittedWorkflowId.current = workflow.id;
+        markMilestone('canvas_interactive');
+        window.requestAnimationFrame(() => {
+          void instance.fitView({
+            padding: 0.18,
+            minZoom: DEFAULT_VIEW.fitMinZoom,
+            maxZoom: DEFAULT_VIEW.fitMaxZoom,
+            duration: reducedMotion ? 0 : 160,
+          });
+        });
+      }}
       ariaLabelConfig={{
         'node.a11yDescription.default': t('canvas.a11y.nodeDefault'),
         'node.a11yDescription.keyboardDisabled': t('canvas.a11y.nodeKeyboardDisabled'),
@@ -150,8 +169,18 @@ export default function WorkflowCanvas() {
       }}
     >
       <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} />
-      <Controls />
-      <MiniMap pannable zoomable />
+      <Controls
+        showInteractive
+        onFitView={() => {
+          void flowRef.current?.fitView({
+            padding: 0.12,
+            minZoom: 0.2,
+            maxZoom: DEFAULT_VIEW.fitMaxZoom,
+            duration: reducedMotion ? 0 : 160,
+          });
+        }}
+      />
+      {wideEnoughForMinimap ? <MiniMap pannable zoomable style={{ width: 160, height: 96 }} /> : null}
     </ReactFlow>
     {menu && (
       <div

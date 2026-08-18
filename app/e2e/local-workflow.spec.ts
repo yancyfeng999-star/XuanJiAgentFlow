@@ -40,13 +40,19 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     await openWorkflowPanel(page);
 
     await page.locator('#workflow-goal').fill('验证画布拖动和右键菜单功能');
-    await page.getByRole('button', { name: '生成规划' }).click();
+    await page.getByRole('main', { name: '工作流画布' }).getByRole('button', { name: '生成规划' }).click();
     await expect(page.getByRole('button', { name: '选择任务：资料研究' })).toBeVisible();
+    await expect(page.locator('.react-flow__node[data-id="research"]')).toBeVisible();
+    await page.locator('.react-flow__node[data-id="research"]').hover();
+    await page.waitForTimeout(300);
 
     const projects = await (await request.get(`${coordinatorUrl()}/api/projects`)).json();
     const project = projects.find((item: { name: string }) => item.name === projectName);
     expect(project).toBeTruthy();
 
+    const beforeX = (await (
+      await request.get(`${coordinatorUrl()}/api/projects/${project.id}/workflow`)
+    ).json()).tasks.find((task: { id: string }) => task.id === 'research')?.ui_position.x ?? 0;
     const researchNode = page.locator('.react-flow__node[data-id="research"]');
     const beforeDrag = await researchNode.boundingBox();
     expect(beforeDrag).toBeTruthy();
@@ -71,7 +77,7 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
         await request.get(`${coordinatorUrl()}/api/projects/${project.id}/workflow`)
       ).json();
       return current.tasks.find((task: { id: string }) => task.id === 'research')?.ui_position.x;
-    }).toBeGreaterThan(80);
+    }).toBeGreaterThan(beforeX + 20);
 
     const researchEdge = page.locator('.react-flow__edge[data-id="research-write"]');
     await expect(researchEdge).toBeVisible();
@@ -138,7 +144,7 @@ test.describe('local workflow (plan → edit → review → multi-node execute)'
     const goal = page.locator('#workflow-goal');
     await expect(goal).toBeVisible({ timeout: 10_000 });
     await goal.fill('生成一份经过多节点核验的研究报告');
-    await page.getByRole('button', { name: '生成规划' }).click();
+    await page.getByRole('main', { name: '工作流画布' }).getByRole('button', { name: '生成规划' }).click();
     await expect(page.getByText(/工作流版本 \d+/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: '选择任务：资料研究' })).toBeVisible({
       timeout: 15_000,

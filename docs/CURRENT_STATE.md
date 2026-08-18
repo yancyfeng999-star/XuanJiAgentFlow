@@ -3,7 +3,7 @@
 > 能力验证日期：2026-08-18（`2fb462d90d63542437971d76736db1ac1b4bd4c8`，两轮 `scripts/verify-all.sh --skip-tauri-build` + 独立 `npm run test:e2e` 均为退出码 0）
 > 事实核对日期：2026-08-18
 > 依据：璇玑 3.0 源码、`scripts/verify-all.sh` 门禁。只记录**已验证**能力。状态为本地实现/测试候选（**实现者自检**），**不代表**已发布、已安装或独立审核通过。
-> 完整命令、警告与未验证层级：[`docs/reviews/2026-08-18-final-remediation-verification.md`](reviews/2026-08-18-final-remediation-verification.md)。源码包版本 **0.3.5**。远端用户安装包仍为 **`v0.3.3`**。Tauri / 桌面 App **未为 0.3.5 重建**。
+> 完整命令、警告与未验证层级：[`docs/reviews/2026-08-18-final-remediation-verification.md`](reviews/2026-08-18-final-remediation-verification.md)。源码与安装包版本 **0.3.6**。远端 Release 以 GitHub `v0.3.6` 为准。Apple 公证 / Staple 仍未做。
 
 > 开源协作提示：本文包含历史桌面包验证证据，不是普通贡献者的构建指令。当前开发和 PR 验证默认不生成或启动 macOS `.app`；请遵循 [`docs/OPEN_SOURCE.md`](OPEN_SOURCE.md) 与 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 的隔离发布边界。
 
@@ -17,6 +17,21 @@
 - React 单一无限画布工作区（`AppShell`）；已删除旧多页 `pages/*` 与 `panels/*`。
 - Python Coordinator（FastAPI）负责项目、工作流、调度、执行、恢复、节点与产物。
 - 远程 Node 仅监听 `127.0.0.1`，按任务临时 SSH 隧道访问（`StrictHostKeyChecking=yes`）。
+
+## 已通过测试验证的能力（2026-08-19 UI / 性能，Web 层）
+
+| 领域 | 验证方式 | 说明 |
+|---|---|---|
+| 首屏骨架 | vitest + Playwright | Coordinator 未就绪时已有导航/顶栏/画布骨架；无全屏 boot-only |
+| 顶栏单一主动作 | vitest | `deriveRunBarModel`：resolve / execute / pause；项目名 `no-path` 不改写 |
+| 就绪根因分组 | vitest + Playwright | `node_offline` 抑制 `task_without_matching_node`；40px 条 + 覆盖详情不改画布高度 |
+| 条件检查器 | vitest | 无 task/run 上下文不占宽；320–480 拖拽/键盘 |
+| 可读画布 | vitest + Playwright | 稳定 `data` 引用；静止边不动画；默认 zoom ≥0.62；卡片宽 ≥240 CSS px |
+| 启动编排 | vitest | 并行 bootstrap；AbortSignal；150ms readiness 合并；无项目不拉 readiness |
+| Bundle 门禁 | `npm run check:bundle` | eager raw 288.5 kB / gzip 89.6 kB；lazy canvas 179.5 kB |
+| 证据分层 | 本文 + baseline 评注 | `source_present` / `targeted_tests_passed` / `web_build_passed` / `browser_runtime_verified`；**`app_runtime_unverified`**；**`remote_release_unverified`** |
+
+版本号、Release、签名、公证、安装包与用户端验收**不因本任务改变**。
 
 ## 已通过测试验证的能力（2026-08-18 最终补救）
 
@@ -98,9 +113,9 @@ E2E 使用 `scripts/e2e_stack.py` 启动 Coordinator + 2 个 FakeNode HTTP 服�
 
 ## 构建产物说明
 
-- 本地 ad-hoc 签名 macOS **可安装 DMG / PKG** 已构建并归档：
-  - DMG: `release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg`
-  - PKG: `release/xuanji-0.3.3-20260811/璇玑-0.3.3.pkg`
+- 本地 ad-hoc 签名 macOS **可安装 DMG / PKG** 已构建：
+  - 当前：GitHub Release `v0.3.6` 的 `XuanJi_0.3.6_aarch64.dmg` / `XuanJi-0.3.6.pkg`
+  - 历史：`release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg` 与对应 PKG
   - 校验值见 `release/README.md`
 - `release/archive/` 只保存历史候选版本；当前安装请以 `release/README.md` 为准。
 - Sidecar：PyInstaller 单文件 `xuanji-coordinator`（Mach-O arm64）随应用打包，不依赖系统 Python。

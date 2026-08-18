@@ -14,7 +14,22 @@ function TaskNodeComponent({ data, selected }: NodeProps<WorkflowNode>) {
   const { t, locale } = useI18n();
   const { agentTypeLabel, schedulingModeLabel } = useLabels();
   const statusKey = `taskStatus.${status}`;
-  return <button type="button" className={`task-node ${selected ? 'is-selected' : ''}`} data-status={status} aria-label={t('task.select', { title: data.title })} onClick={() => selectTask(data.id)}>
+  return <button
+    type="button"
+    className={`task-node ${selected ? 'is-selected' : ''}`}
+    data-status={status}
+    aria-label={t('task.select', { title: data.title })}
+    onPointerDown={(event) => {
+      (event.currentTarget as HTMLButtonElement).dataset.pointerX = String(event.clientX);
+      (event.currentTarget as HTMLButtonElement).dataset.pointerY = String(event.clientY);
+    }}
+    onClick={(event) => {
+      const originX = Number((event.currentTarget as HTMLButtonElement).dataset.pointerX ?? event.clientX);
+      const originY = Number((event.currentTarget as HTMLButtonElement).dataset.pointerY ?? event.clientY);
+      if (Math.hypot(event.clientX - originX, event.clientY - originY) > 4) return;
+      selectTask(data.id);
+    }}
+  >
     <Handle type="target" position={Position.Left} />
     <div className="task-node__head"><strong>{data.title}</strong><span>{agentTypeLabel(data.agent_type)}</span></div>
     <p>{data.description}</p>
@@ -30,4 +45,6 @@ function TaskNodeComponent({ data, selected }: NodeProps<WorkflowNode>) {
   </button>;
 }
 
-export const TaskNode = memo(TaskNodeComponent);
+export const TaskNode = memo(TaskNodeComponent, (previous, next) => (
+  previous.data === next.data && previous.selected === next.selected
+));

@@ -130,4 +130,19 @@ describe('CoordinatorClient', () => {
       expect.objectContaining({ method: 'PUT' }),
     );
   });
+
+  it('forwards AbortSignal on project GET', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      id: 'p1', name: 'P', root_path: '/tmp', active_workflow_version: 1,
+      created_at: '2026-08-19T00:00:00Z', updated_at: '2026-08-19T00:00:00Z',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    const client = createApiClient('http://127.0.0.1:8000');
+    void client.getProject('p1', { signal: controller.signal });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
 });

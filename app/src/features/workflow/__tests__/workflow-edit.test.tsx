@@ -44,6 +44,14 @@ const client = {
     last_test_status: 'untested', last_tested_at: null,
   }),
   updateThinkingModel: vi.fn(), deleteThinkingModel: vi.fn(), setDefaultThinkingModel: vi.fn(),
+  getReadiness: vi.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-08-19T00:00:00Z',
+    projectId: 'project-1',
+    workflowId: 'workflow-1',
+    checks: {},
+    issues: [],
+  }),
 } as unknown as CoordinatorClient;
 
 beforeEach(() => {
@@ -84,12 +92,13 @@ describe('editable workflow workspace', () => {
     await screen.findByRole('button', { name: '审核工作流' });
     expect(useWorkspaceStore.getState().workflow?.tasks[0].title).toBe('Research');
     act(() => useWorkspaceStore.getState().selectTask('research'));
+    await screen.findByLabelText('任务标题');
     fireEvent.change(screen.getByLabelText('任务标题'), { target: { value: 'Investigate' } });
     fireEvent.click(screen.getByRole('button', { name: '保存任务' }));
     await waitFor(() => expect(client.updateWorkflow).toHaveBeenCalled());
 
     await confirmReviewViaModal();
-    await waitFor(() => expect(screen.getByText('已审核，编辑已冻结')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('工作流已审核，创建新修订后才能编辑。')).toBeInTheDocument());
     expect(screen.getByLabelText('任务标题')).toBeDisabled();
   });
 
@@ -104,6 +113,7 @@ describe('editable workflow workspace', () => {
     render(<AppShell />);
     await screen.findByRole('button', { name: '审核工作流' });
     act(() => useWorkspaceStore.getState().selectTask('research'));
+    await screen.findByRole('tab', { name: '执行' });
     fireEvent.click(screen.getByRole('tab', { name: '执行' }));
 
     await screen.findByText('终端');
@@ -139,7 +149,7 @@ describe('editable workflow workspace', () => {
     await waitFor(() => expect(client.updateWorkflow).toHaveBeenCalled());
 
     act(() => useWorkspaceStore.getState().selectTask('research'));
-    fireEvent.click(screen.getByRole('button', { name: '删除任务' }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除任务' }));
     await waitFor(() => expect(client.updateWorkflow).toHaveBeenCalledTimes(2));
 
     await confirmReviewViaModal();
@@ -150,7 +160,8 @@ describe('editable workflow workspace', () => {
   it('gates execution before review and executes only after review', async () => {
     render(<AppShell />);
     await waitFor(() => expect(screen.getByText('Editable project')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: '执行全部' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '审核工作流' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '执行全部' })).not.toBeInTheDocument();
 
     await confirmReviewViaModal();
     await waitFor(() => expect(screen.getByRole('button', { name: '执行全部' })).toBeEnabled());

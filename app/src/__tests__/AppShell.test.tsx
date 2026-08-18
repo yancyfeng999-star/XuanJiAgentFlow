@@ -6,6 +6,15 @@ import type { CoordinatorClient, Project, Workflow } from '../lib/client';
 import { applyTheme, initTheme, setThemePreference } from '../lib/theme';
 import { setWorkspaceClient, useWorkspaceStore } from '../store/workspaceStore';
 
+const waitForHealthyRuntime = vi.fn();
+vi.mock('../lib/runtime', async () => {
+  const actual = await vi.importActual<typeof import('../lib/runtime')>('../lib/runtime');
+  return {
+    ...actual,
+    waitForHealthyRuntime: (...args: unknown[]) => waitForHealthyRuntime(...args),
+  };
+});
+
 const project: Project = {
   id: 'project-shell',
   name: '服务端项目快照',
@@ -50,10 +59,29 @@ const client = {
   getProject: vi.fn().mockResolvedValue(project),
   getProjectWorkflow: vi.fn().mockResolvedValue(workflow),
   listProjectRuns: vi.fn().mockResolvedValue({ runs: [], next_cursor: null }),
+  listNodes: vi.fn().mockResolvedValue([]),
+  listThinkingModels: vi.fn().mockResolvedValue({ items: [] }),
+  getReadiness: vi.fn().mockResolvedValue({
+    ready: true,
+    checkedAt: '2026-08-19T00:00:00Z',
+    projectId: project.id,
+    workflowId: workflow.id,
+    checks: {},
+    issues: [],
+  }),
 } as unknown as CoordinatorClient;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  waitForHealthyRuntime.mockResolvedValue({
+    status: 'healthy',
+    baseUrl: 'http://127.0.0.1:8000',
+    port: 8000,
+    dataDir: null,
+    pid: null,
+    sessionToken: null,
+    error: null,
+  });
   setWorkspaceClient(client);
   useWorkspaceStore.getState().resetWorkspace();
 });
@@ -68,28 +96,45 @@ async function renderReadyShell() {
 }
 
 describe('Xuanji 2.0 workspace shell', () => {
-  it('renders exactly the four core workspace regions after coordinator is healthy', async () => {
+  it('renders workspace chrome while the coordinator is still connecting', () => {
+    waitForHealthyRuntime.mockReturnValue(new Promise(() => {}));
+    render(<AppShell />);
+    expect(screen.getByRole('navigation', { name: '工作区导航' })).toBeVisible();
+    expect(screen.getByRole('banner', { name: '顶部运行栏' })).toBeVisible();
+    expect(screen.getByTestId('workspace-canvas-skeleton')).toBeVisible();
+    expect(screen.queryByRole('complementary', { name: '节点检查器' })).not.toBeInTheDocument();
+  });
+
+  it('renders nav, run bar and canvas after coordinator is healthy without an empty inspector', async () => {
     await renderReadyShell();
 
     expect(screen.getByRole('navigation', { name: '工作区导航' })).toBeInTheDocument();
     expect(screen.getByRole('banner', { name: '顶部运行栏' })).toBeInTheDocument();
-    expect(screen.getByRole('main', { name: '工作流画布' })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: '节点检查器' })).toBeInTheDocument();
+    expect(await screen.findByRole('main', { name: '工作流画布' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: '节点检查器' })).not.toBeInTheDocument();
     expect(screen.queryByText('传统流程')).not.toBeInTheDocument();
   });
 
-  it('keeps inspector landmark and collapse control on a wide three-pane shell', async () => {
+  it('does not reserve inspector width without task or run context', async () => {
     await renderReadyShell();
-    expect(screen.getByRole('button', { name: '收起检查器' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: '节点检查器' })).not.toBeInTheDocument();
+  });
+
+  it('opens the inspector after a task is selected', async () => {
+    await renderReadyShell();
+    await waitFor(() => expect(client.getProjectWorkflow).toHaveBeenCalled());
+    act(() => useWorkspaceStore.getState().selectTask('server-task'));
+    expect(await screen.findByRole('heading', { name: '服务端任务定义' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关闭检查器' })).toBeInTheDocument();
   });
 
   it('shows a selected task from the server workflow snapshot in the inspector', async () => {
     await renderReadyShell();
-    await waitFor(() => expect(client.getProjectWorkflow).toHaveBeenCalledWith(project.id));
+    await waitFor(() => expect(client.getProjectWorkflow).toHaveBeenCalled());
 
     act(() => useWorkspaceStore.getState().selectTask('server-task'));
 
-    expect(screen.getByRole('heading', { name: '服务端任务定义' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '服务端任务定义' })).toBeInTheDocument();
     expect(screen.getByLabelText('任务指令')).toHaveValue('只使用服务端返回的任务 Prompt。');
   });
 
@@ -97,6 +142,18 @@ describe('Xuanji 2.0 workspace shell', () => {
     await renderReadyShell();
 
     act(() => {
+      useWorkspaceStore.setState({
+        run: {
+          id: 'run-shell',
+          workflow_id: workflow.id,
+          status: 'running',
+          started_at: '2026-08-19T00:00:00Z',
+          completed_at: null,
+          created_at: '2026-08-19T00:00:00Z',
+          attempts: [],
+          allowed_actions: ['pause', 'cancel'],
+        },
+      });
       useWorkspaceStore.getState().setRunStatus('running');
       useWorkspaceStore.getState().setRunProgress(42);
     });

@@ -352,13 +352,17 @@ function localizedErrorMessage(code: string, message?: string): string {
   return translate(locale, 'error.fallback', { code });
 }
 
+export interface RequestOptions {
+  signal?: AbortSignal;
+}
+
 export interface CoordinatorClient {
-  listProjects(): Promise<Project[]>;
+  listProjects(options?: RequestOptions): Promise<Project[]>;
   createProject(input: { name: string; root_path?: string }): Promise<Project>;
-  getProject(projectId: string): Promise<Project>;
+  getProject(projectId: string, options?: RequestOptions): Promise<Project>;
   renameProject(projectId: string, name: string): Promise<Project>;
   deleteProject(projectId: string): Promise<{ deleted: boolean; artifacts_retained: boolean; root_path: string }>;
-  getProjectWorkflow(projectId: string): Promise<Workflow | null>;
+  getProjectWorkflow(projectId: string, options?: RequestOptions): Promise<Workflow | null>;
   plan(projectId: string, input: PlanInput): Promise<Workflow>;
   getWorkflow(workflowId: string): Promise<Workflow>;
   updateWorkflow(workflowId: string, input: WorkflowUpdate): Promise<Workflow>;
@@ -367,7 +371,7 @@ export interface CoordinatorClient {
   reviewWorkflow(workflowId: string, input: { snapshot_hash: string; acknowledged_warnings: string[] }): Promise<Workflow>;
   createRevision(workflowId: string): Promise<Workflow>;
   createRun(workflowId: string): Promise<Run>;
-  listProjectRuns(projectId: string, cursor?: string | null, limit?: number): Promise<ProjectRunPage>;
+  listProjectRuns(projectId: string, cursor?: string | null, limit?: number, options?: RequestOptions): Promise<ProjectRunPage>;
   startRun(runId: string): Promise<{ id: string; status: 'accepted' }>;
   getRun(runId: string): Promise<Run>;
   pauseRun(runId: string): Promise<Run>;
@@ -377,7 +381,7 @@ export interface CoordinatorClient {
   skipTask(runId: string, taskId: string): Promise<Run>;
   listArtifacts(runId: string): Promise<{ artifacts: Artifact[] }>;
   listTaskLogs(runId: string, taskId: string, offset?: number): Promise<LogPage>;
-  listNodes(): Promise<HermesNode[]>;
+  listNodes(options?: RequestOptions): Promise<HermesNode[]>;
   createNode(input: NodeInput): Promise<HermesNode>;
   updateNode(nodeId: string, input: NodeUpdate): Promise<HermesNode>;
   deleteNode(nodeId: string): Promise<void>;
@@ -388,13 +392,13 @@ export interface CoordinatorClient {
   provisionNode(nodeId: string, hermesPort: number): Promise<{ node_id: string; completed: boolean; steps: Record<string, unknown>[] }>;
   getPlannerConfig(): Promise<PlannerConfig>;
   setPlannerConfig(input: PlannerConfigInput): Promise<PlannerConfig>;
-  listThinkingModels(): Promise<{ items: ThinkingModelProfile[] }>;
+  listThinkingModels(options?: RequestOptions): Promise<{ items: ThinkingModelProfile[] }>;
   createThinkingModel(input: Record<string, unknown>): Promise<ThinkingModelProfile>;
   updateThinkingModel(id: string, input: Record<string, unknown>): Promise<ThinkingModelProfile>;
   deleteThinkingModel(id: string): Promise<void>;
   setDefaultThinkingModel(id: string): Promise<ThinkingModelProfile>;
   getDiagnostics(): Promise<Record<string, unknown>>;
-  getReadiness(query?: ReadinessQuery): Promise<ReadinessResult>;
+  getReadiness(query?: ReadinessQuery, options?: RequestOptions): Promise<ReadinessResult>;
   createWsTicket(runId: string): Promise<{ ticket: string; expires_in: number }>;
 }
 
@@ -424,7 +428,14 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
           ...init?.headers,
         },
       });
-    } catch {
+    } catch (error) {
+      if (
+        init?.signal?.aborted
+        || (error instanceof DOMException && error.name === 'AbortError')
+        || (error instanceof Error && error.name === 'AbortError')
+      ) {
+        throw error;
+      }
       throw new CoordinatorError(0, 'network_error', translate(getLocale(), 'error.network_error'));
     }
 
@@ -445,12 +456,12 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
   const id = encodeURIComponent;
 
   return {
-    listProjects: () => request('/api/projects'),
+    listProjects: (options) => request('/api/projects', { signal: options?.signal }),
     createProject: (input) => request('/api/projects', json('POST', input)),
-    getProject: (projectId) => request(`/api/projects/${id(projectId)}`),
+    getProject: (projectId, options) => request(`/api/projects/${id(projectId)}`, { signal: options?.signal }),
     renameProject: (projectId, name) => request(`/api/projects/${id(projectId)}`, json('PATCH', { name })),
     deleteProject: (projectId) => request(`/api/projects/${id(projectId)}`, json('DELETE')),
-    getProjectWorkflow: (projectId) => request(`/api/projects/${id(projectId)}/workflow`),
+    getProjectWorkflow: (projectId, options) => request(`/api/projects/${id(projectId)}/workflow`, { signal: options?.signal }),
     plan: (projectId, input) => request(`/api/projects/${id(projectId)}/plan`, json('POST', input)),
     getWorkflow: (workflowId) => request(`/api/workflows/${id(workflowId)}`),
     updateWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}`, json('PUT', input)),
@@ -459,10 +470,10 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     reviewWorkflow: (workflowId, input) => request(`/api/workflows/${id(workflowId)}/review`, json('POST', input)),
     createRevision: (workflowId) => request(`/api/workflows/${id(workflowId)}/revisions`, json('POST')),
     createRun: (workflowId) => request(`/api/workflows/${id(workflowId)}/runs`, json('POST')),
-    listProjectRuns: (projectId, cursor = null, limit = 20) => {
+    listProjectRuns: (projectId, cursor = null, limit = 20, options) => {
       const params = new URLSearchParams({ limit: String(limit) });
       if (cursor) params.set('cursor', cursor);
-      return request(`/api/projects/${id(projectId)}/runs?${params.toString()}`);
+      return request(`/api/projects/${id(projectId)}/runs?${params.toString()}`, { signal: options?.signal });
     },
     startRun: (runId) => request(`/api/runs/${id(runId)}/start`, json('POST')),
     getRun: (runId) => request(`/api/runs/${id(runId)}`),
@@ -474,7 +485,7 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     listArtifacts: (runId) => request(`/api/runs/${id(runId)}/artifacts`),
     listTaskLogs: (runId, taskId, offset = 0) =>
       request(`/api/runs/${id(runId)}/tasks/${id(taskId)}/logs?offset=${encodeURIComponent(String(offset))}`),
-    listNodes: () => request('/api/nodes'),
+    listNodes: (options) => request('/api/nodes', { signal: options?.signal }),
     createNode: (input) => request('/api/nodes', json('POST', input)),
     updateNode: (nodeId, input) => request(`/api/nodes/${id(nodeId)}`, json('PATCH', nodeUpdatePayload(input))),
     deleteNode: (nodeId) => request(`/api/nodes/${id(nodeId)}`, json('DELETE')),
@@ -485,20 +496,20 @@ export function createApiClient(baseUrl: string, sessionToken?: string | null): 
     provisionNode: (nodeId, hermesPort) => request(`/api/nodes/${id(nodeId)}/provision`, json('POST', { hermes_port: hermesPort })),
     getPlannerConfig: () => request('/api/planner/config'),
     setPlannerConfig: (input) => request('/api/planner/config', json('PUT', input)),
-    listThinkingModels: () => request('/api/thinking-models'),
+    listThinkingModels: (options) => request('/api/thinking-models', { signal: options?.signal }),
     createThinkingModel: (input) => request('/api/thinking-models', json('POST', input)),
     updateThinkingModel: (id, input) => request(`/api/thinking-models/${encodeURIComponent(id)}`, json('PATCH', input)),
     deleteThinkingModel: (id) => request(`/api/thinking-models/${encodeURIComponent(id)}`, json('DELETE')),
     setDefaultThinkingModel: (id) => request(`/api/thinking-models/${encodeURIComponent(id)}/default`, json('PUT')),
     getDiagnostics: () => request('/api/diagnostics'),
     createWsTicket: (runId) => request('/api/session/ws-tickets', json('POST', { run_id: runId })),
-    getReadiness: (query = {}) => {
+    getReadiness: (query = {}, options) => {
       const params = new URLSearchParams();
       if (query.projectId) params.set('project_id', query.projectId);
       if (query.workflowId) params.set('workflow_id', query.workflowId);
       if (query.mode) params.set('mode', query.mode);
       const suffix = params.size ? `?${params.toString()}` : '';
-      return request(`/api/readiness${suffix}`);
+      return request(`/api/readiness${suffix}`, { signal: options?.signal });
     },
   };
 }

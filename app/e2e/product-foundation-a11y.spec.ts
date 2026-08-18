@@ -9,4 +9,6 @@ test('keyboard can reach thinking models and inspector tabs', async ({ page }) =
   await expect(nav.getByRole('button', { name: '工作流' })).toBeFocused();
   await nav.getByRole('button', { name: '思考模型' }).click();
   await expect(page.getByRole('heading', { name: '思考模型' })).toBeVisible();
+  await nav.getByRole('button', { name: '工作流' }).click();
+  await page.keyboard.press('Escape');
 });
