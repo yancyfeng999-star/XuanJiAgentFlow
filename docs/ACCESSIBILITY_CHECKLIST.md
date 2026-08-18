@@ -22,13 +22,22 @@
 - [x] 新增 `e2e/product-foundation-responsive.spec.ts` 断点可见性
 - [ ] VoiceOver / 原生菜单 / 真实更新安装仍需真实 App（release-owner）
 
+## 2026-08-18 自动化边界
+
+自动化只覆盖浏览器 `deviceScaleFactor: 2`（`e2e/canvas-clarity.spec.ts` 2x 裁剪截图）、键盘（焦点陷阱、可访问名称、思考模型键盘路径）和 `prefers-reduced-motion`。下列项仍是 `not_runtime_verified`，不得由浏览器自动化推断：
+
+- 真实 macOS VoiceOver
+- 原生系统缩放（含 200% 缩放）
+- App WebView（Tauri 桌面壳）
+
 ## 需人工执行的项（审核阶段 D4）
 
 | 项 | 方法 | 记录 |
 | --- | --- | --- |
 | 仅键盘完成创建→配置→审核→运行→产物 | 键盘走查 | `not_verified` |
-| VoiceOver 主路径 | macOS VoiceOver 录屏 | `not_verified` |
-| 200% 缩放下最小窗口操作 | 系统缩放 + 900px 宽窗口 | `not_verified` |
+| VoiceOver 主路径 | macOS VoiceOver 录屏 | `not_runtime_verified` |
+| 200% 原生缩放下最小窗口操作 | 系统缩放 + 900px 宽窗口 | `not_runtime_verified` |
+| App WebView 主路径 | 真实 Tauri WebView | `not_runtime_verified` |
 | 中/英 × 亮/暗四组合目视检查 | 手动切换 | `not_verified` |
 | 朱砂色/正文/弱化文字对比度 | 对比度工具 | `not_verified` |
 
