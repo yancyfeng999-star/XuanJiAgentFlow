@@ -65,15 +65,16 @@ App = 图形手脚；Skill = 对话手脚。
 
 详见 [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)。
 
-## 安装包（已验证的 0.3.3 历史资产）
+## 安装包
 
 真实远程服务器不需要预先配进安装包：安装后在界面填写服务器、SSH 用户、私钥路径、Node Token 与思考模型 Key。安装包仅用于已有 Release 验收，不是普通开发步骤。
 
-当前源码与安装包版本为 **0.3.6**。以 GitHub Release `v0.3.6` 为准。
+当前源码与安装包版本为 **0.3.6**。以 [GitHub Release `v0.3.6`](https://github.com/yancyfeng999-star/XuanJiAgentFlow/releases/tag/v0.3.6) 为准。
 
-```text
-release/xuanji-0.3.3-20260811/璇玑_0.3.3_aarch64.dmg
-```
+- `XuanJi_0.3.6_aarch64.dmg`（推荐）
+- `XuanJi-0.3.6.pkg`
+
+历史 0.3.3 本地归档仍在 `release/xuanji-0.3.3-20260811/`，不是当前安装源。
 
 安装：打开 DMG → 拖拽「璇玑.app」到 `Applications`。  
 历史包见 `release/README.md`。
