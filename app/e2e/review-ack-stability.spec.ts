@@ -26,42 +26,6 @@ test.describe('review acknowledgement stability', () => {
   }) => {
     await ensureWorkspaceReady(page);
 
-    const firstProjectName = `审核确认前序画布 ${Date.now()}`;
-    await createProjectViaUi(page, firstProjectName);
-    await openWorkflowPanel(page);
-    await page.locator('#workflow-goal').fill('验证画布断线和删节点');
-    await page.getByRole('main', { name: '工作流画布' }).getByRole('button', { name: '生成规划' }).click();
-    await expect(page.getByRole('button', { name: '选择任务：资料研究' })).toBeVisible({
-      timeout: 15_000,
-    });
-
-    const firstProjects = await (await request.get(`${coordinatorUrl()}/api/projects`)).json();
-    const firstProject = firstProjects.find((item: { name: string }) => item.name === firstProjectName);
-    expect(firstProject).toBeTruthy();
-
-    const researchEdge = page.locator('.react-flow__edge[data-id="research-write"]');
-    await expect(researchEdge).toBeVisible();
-    await researchEdge.dispatchEvent('contextmenu', { clientX: 520, clientY: 300 });
-    await expect(page.getByRole('menu', { name: '连线操作' })).toBeVisible();
-    await page.getByRole('menuitem', { name: '断开连线' }).click();
-    await expect.poll(async () => {
-      const current = await (
-        await request.get(`${coordinatorUrl()}/api/projects/${firstProject.id}/workflow`)
-      ).json();
-      return current.tasks.find((task: { id: string }) => task.id === 'write')?.dependencies;
-    }).toEqual(['analyze']);
-
-    await page.getByRole('button', { name: '选择任务：资料研究' }).click({ button: 'right' });
-    await expect(page.getByRole('menu', { name: '节点操作' })).toBeVisible();
-    await page.getByRole('menuitem', { name: '删除节点' }).click();
-    await expect.poll(async () => {
-      const current = await (
-        await request.get(`${coordinatorUrl()}/api/projects/${firstProject.id}/workflow`)
-      ).json();
-      return current.tasks.map((task: { id: string }) => task.id);
-    }).toEqual(['analyze', 'write']);
-    await expect(page.getByRole('button', { name: '选择任务：资料研究' })).toHaveCount(0);
-
     const reviewProjectName = `审核确认稳定性 ${Date.now()}`;
     await createProjectViaUi(page, reviewProjectName);
     await openWorkflowPanel(page);

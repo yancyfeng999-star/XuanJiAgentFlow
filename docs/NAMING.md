@@ -19,7 +19,7 @@
 | 对话产品 | XuanJiAgentFlowSkill | 与 App 目录名混用 |
 | 组合 Skill 名 | XuanJiAgentFlow | 写成 App 名 |
 | Slogan | 思考在先，执行在后 | — |
-| 包名示例 | `璇玑_0.3.3_aarch64.dmg` | 编造版本 |
+| 包名示例 | `XuanJi_0.3.6_aarch64.dmg` | 编造版本 |
 | 产品方向 | 3.0 = 真执行闭环 | 说成已公证上架 |
 
 ## 废弃 / 勿再写入

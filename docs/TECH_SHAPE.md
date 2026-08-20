@@ -51,7 +51,7 @@
 
 | 项 | 值 |
 |----|-----|
-| 产品 / 包版本 | 0.3.3（`璇玑_0.3.3_aarch64.dmg`） |
+| 产品 / 包版本 | 0.3.6（`XuanJi_0.3.6_aarch64.dmg`） |
 | Coordinator API 版本 | 3.0.0（`GET /api/status`，见 `backend/src/xuanji/api/app.py`） |
 | 数据 schema 版本 | 3（`backend/src/xuanji/storage/migrations.py` 的 `CURRENT_SCHEMA_VERSION`） |
 | Sidecar | PyInstaller `xuanji-coordinator`（Mach-O arm64）随 App 打包 |
